@@ -1,0 +1,2526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Roblox Manager</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous">
+  <style>
+    :root {
+      --bg: #0d0d12;
+      --surface: #16161f;
+      --surface2: #1e1e2a;
+      --border: #2a2a3d;
+      --accent: #e34234;
+      --accent-dim: rgba(227,66,52,0.12);
+      --blue: #00b4d8;
+      --blue-dim: rgba(0,180,216,0.12);
+      --green: #5cb85c;
+      --green-dim: rgba(92,184,92,0.12);
+      --yellow: #f5c518;
+      --yellow-dim: rgba(245,197,24,0.14);
+      --purple: #a78bfa;
+      --purple-dim: rgba(167,139,250,0.12);
+      --text: #e2e2ee;
+      --muted: #7a7a9a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg); color: var(--text); min-height: 100vh;
+    }
+
+    /* ── HEADER ── */
+    header {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 10px 28px; display: flex; align-items: center; gap: 14px;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .brand-logo {
+      height: 42px; width: 42px; flex-shrink: 0; object-fit: contain; display: block; border-radius: 8px;
+    }
+    .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+    .user-avatar  { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border); }
+    .user-name    { font-size: 0.88rem; font-weight: 600; }
+    .connected-badge {
+      font-size: 0.7rem; font-weight: 700; background: var(--green-dim);
+      color: var(--green); border-radius: 20px; padding: 3px 10px;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .connected-badge i { font-size: 0.45rem; }
+
+    /* ── BUTTONS ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 9px 20px; border-radius: 8px; border: none;
+      cursor: pointer; font-size: 0.88rem; font-weight: 600;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn:hover:not(:disabled) { opacity: 0.82; }
+    .btn:active:not(:disabled) { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.38; cursor: not-allowed; }
+    .btn-primary   { background: var(--accent); color: #fff; }
+    .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    .btn-ghost     { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+    .btn-green     { background: var(--green); color: #0d0d12; }
+    .btn-purple    { background: var(--purple); color: #0d0d12; }
+    .btn-sm        { padding: 6px 13px; font-size: 0.8rem; }
+
+    /* ── INPUTS ── */
+    .inp {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 14px; color: var(--text);
+      font-size: 0.9rem; transition: border-color 0.15s; width: 100%;
+    }
+    .inp:focus { outline: none; border-color: var(--accent); }
+    .inp::placeholder { color: var(--muted); }
+
+    /* ── ERROR BOX ── */
+    .errbox {
+      background: rgba(227,66,52,0.08); border: 1px solid rgba(227,66,52,0.3);
+      border-radius: 10px; padding: 13px 17px; color: #ff7063;
+      font-size: 0.88rem; line-height: 1.5; margin-bottom: 16px; display: none;
+    }
+
+    /* ══════════════════════════════════════
+       STEP 1 — AUTH
+    ══════════════════════════════════════ */
+    #s-auth {
+      display: flex; align-items: center; justify-content: center;
+      min-height: calc(100vh - 58px); padding: 40px 20px;
+    }
+    .auth-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; padding: 40px; width: 100%; max-width: 500px;
+    }
+    .auth-icon {
+      width: 56px; height: 56px; background: var(--accent-dim);
+      border: 1px solid rgba(227,66,52,0.25); border-radius: 14px;
+      display: grid; place-items: center; margin-bottom: 22px;
+      color: var(--accent); font-size: 1.4rem;
+    }
+    .auth-card h2 { font-size: 1.45rem; font-weight: 800; margin-bottom: 6px; }
+    .auth-card .sub { color: var(--muted); font-size: 0.88rem; margin-bottom: 28px; line-height: 1.55; }
+    .inp-wrap { position: relative; margin-bottom: 14px; }
+    .toggle-vis {
+      position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      font-size: 0.95rem; line-height: 1; padding: 4px; transition: color 0.15s;
+    }
+    .toggle-vis:hover { color: var(--text); }
+    .auth-note {
+      margin-top: 18px; background: var(--blue-dim);
+      border: 1px solid rgba(0,180,216,0.2); border-radius: 8px;
+      padding: 12px 14px; font-size: 0.8rem; color: var(--blue); line-height: 1.6;
+    }
+    .auth-note code {
+      background: rgba(0,180,216,0.15); border-radius: 4px;
+      padding: 1px 5px; font-family: 'Consolas', monospace;
+    }
+
+    /* ══════════════════════════════════════
+       STEP 2 — GAME PICKER
+    ══════════════════════════════════════ */
+    #s-picker { display: none; padding: 32px 28px; max-width: 1200px; margin: 0 auto; }
+    .picker-head { margin-bottom: 24px; }
+    .picker-head h2 { font-size: 1.3rem; font-weight: 800; margin-bottom: 4px; }
+    .picker-head p  { color: var(--muted); font-size: 0.88rem; }
+
+    .sec-label {
+      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.09em;
+      text-transform: uppercase; color: var(--muted);
+      margin-bottom: 14px; margin-top: 28px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .sec-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    .group-row {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 14px; margin-top: 24px; padding: 10px 14px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+    .grp-img {
+      width: 38px; height: 38px; border-radius: 8px; object-fit: cover;
+      border: 1px solid var(--border); background: var(--surface2); flex-shrink: 0;
+    }
+    .grp-ph {
+      width: 38px; height: 38px; border-radius: 8px;
+      background: var(--surface2); border: 1px solid var(--border);
+      display: grid; place-items: center; color: var(--muted); font-size: 1rem; flex-shrink: 0;
+    }
+    .grp-name { font-size: 0.95rem; font-weight: 700; }
+    .grp-meta { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+
+    .game-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 12px;
+    }
+    .game-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; overflow: hidden; cursor: pointer;
+      transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
+    }
+    .game-card:hover {
+      border-color: var(--accent); transform: translateY(-3px);
+      box-shadow: 0 8px 24px rgba(227,66,52,0.15);
+    }
+    .game-thumb {
+      width: 100%; aspect-ratio: 1; object-fit: cover;
+      background: var(--surface2); display: block;
+    }
+    .game-thumb-ph {
+      width: 100%; aspect-ratio: 1; background: var(--surface2);
+      display: grid; place-items: center; font-size: 2rem; color: var(--muted);
+    }
+    .game-card-body { padding: 10px 12px; }
+    .game-card-name { font-size: 0.82rem; font-weight: 600; line-height: 1.3; }
+    .game-card-sub  { font-size: 0.7rem; color: var(--muted); margin-top: 3px; }
+
+    /* ══════════════════════════════════════
+       STEP 3 — PRODUCTS
+    ══════════════════════════════════════ */
+    #s-products { display: none; padding: 28px; max-width: 1280px; margin: 0 auto; }
+
+    .prod-header {
+      display: flex; align-items: center; gap: 14px;
+      margin-bottom: 22px; flex-wrap: wrap;
+    }
+    .game-icon-hdr {
+      width: 52px; height: 52px; border-radius: 10px; object-fit: cover;
+      border: 1px solid var(--border); background: var(--surface2); flex-shrink: 0;
+    }
+    .game-icon-hdr-ph {
+      width: 52px; height: 52px; border-radius: 10px;
+      background: var(--surface2); border: 1px solid var(--border);
+      display: grid; place-items: center; font-size: 1.4rem;
+      color: var(--muted); flex-shrink: 0;
+    }
+    .game-hdr-info h2 { font-size: 1.2rem; font-weight: 800; }
+    .game-hdr-info p  { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+    .prod-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+    /* Toolbar */
+    .toolbar {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 13px 18px;
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 0; flex-wrap: wrap;
+    }
+    .tb-label { font-size: 0.84rem; font-weight: 600; color: var(--muted); flex-shrink: 0; display: flex; align-items: center; gap: 7px; }
+    .divider-inp {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 7px; padding: 7px 11px; color: var(--text);
+      font-size: 0.92rem; width: 80px; text-align: center;
+      font-family: 'Consolas', monospace;
+    }
+    .divider-inp:focus { outline: none; border-color: var(--accent); }
+    .tb-preview { font-size: 0.8rem; color: var(--muted); }
+    .tb-preview b { color: var(--yellow); }
+    .tb-preview .arrow { color: var(--accent); }
+
+    /* Update summary */
+    #upd-summary {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 16px 20px; margin-bottom: 20px;
+      display: none;
+    }
+    .sum-row { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+    .sum-ok   { color: var(--green); font-weight: 700; font-size: 0.9rem; display: flex; align-items: center; gap: 6px; }
+    .sum-fail { color: var(--accent); font-weight: 700; font-size: 0.9rem; display: flex; align-items: center; gap: 6px; }
+    .sum-detail {
+      margin-top: 10px; font-size: 0.78rem; color: var(--muted);
+      background: var(--surface2); border-radius: 7px; padding: 10px 12px;
+      white-space: pre-wrap; display: none; max-height: 200px; overflow-y: auto;
+    }
+    .sum-toggle { cursor: pointer; font-size: 0.78rem; color: var(--muted); text-decoration: underline; display: inline-flex; align-items: center; gap: 5px; }
+
+    /* ── TABS ── */
+    .tab-bar {
+      display: flex; border-bottom: 1px solid var(--border);
+      margin-top: 18px; margin-bottom: 0;
+    }
+    .tab-btn {
+      background: none; border: none; border-bottom: 2px solid transparent;
+      padding: 10px 18px; margin-bottom: -1px;
+      color: var(--muted); font-size: 0.87rem; font-weight: 600;
+      cursor: pointer; display: flex; align-items: center; gap: 7px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-badge {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 20px; padding: 1px 8px; font-size: 0.7rem; font-weight: 700;
+      color: var(--muted);
+    }
+    .tab-btn.active .tab-badge {
+      background: var(--accent-dim); color: var(--accent);
+      border-color: rgba(227,66,52,0.3);
+    }
+    .tab-btn[data-tab="scan"].active { color: var(--purple); border-bottom-color: var(--purple); }
+    .tab-btn[data-tab="scan"].active .tab-badge {
+      background: var(--purple-dim); color: var(--purple);
+      border-color: rgba(167,139,250,0.3);
+    }
+
+    .tab-pane { display: none; padding-top: 20px; }
+    .tab-pane.active { display: block; }
+
+    /* Product sections */
+    .prod-list { display: flex; flex-direction: column; gap: 8px; }
+    .prod-item {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px;
+      display: grid;
+      grid-template-columns: 60px 1fr 1.4fr 150px;
+      gap: 14px; align-items: start;
+      transition: border-color 0.15s;
+    }
+    .prod-item:hover { border-color: rgba(255,255,255,0.1); }
+
+    .prod-icon {
+      width: 60px; height: 60px; border-radius: 8px; object-fit: cover;
+      border: 1px solid var(--border); background: var(--surface2);
+    }
+    .prod-icon-ph {
+      width: 60px; height: 60px; border-radius: 8px;
+      background: var(--surface2); border: 1px solid var(--border);
+      display: grid; place-items: center; font-size: 1.3rem; color: var(--muted);
+    }
+
+    .prod-field label {
+      display: block; font-size: 0.69rem; font-weight: 700;
+      color: var(--muted); text-transform: uppercase;
+      letter-spacing: 0.07em; margin-bottom: 5px;
+    }
+    .prod-field .inp { font-size: 0.84rem; padding: 7px 10px; }
+    .prod-field textarea.inp { resize: vertical; min-height: 62px; font-family: inherit; }
+
+    .price-col-label {
+      font-size: 0.69rem; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 5px;
+    }
+    .orig-price-display {
+      font-family: 'Consolas', monospace; font-size: 0.9rem;
+      color: var(--muted); padding: 7px 10px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 7px; margin-bottom: 8px;
+    }
+    .price-arrow-label {
+      font-size: 0.78rem; color: var(--muted); text-align: center;
+      margin-bottom: 6px; display: flex; align-items: center;
+      gap: 5px; justify-content: center;
+    }
+    .price-arrow-label .divisor { color: var(--yellow); font-weight: 700; }
+    .new-price-inp {
+      background: var(--yellow-dim); border: 1px solid rgba(245,197,24,0.3);
+      border-radius: 7px; padding: 7px 10px; color: var(--yellow);
+      font-size: 0.9rem; font-family: 'Consolas', monospace;
+      font-weight: 700; width: 100%;
+    }
+    .new-price-inp:focus { outline: none; border-color: var(--yellow); }
+    .new-price-inp.unset {
+      background: rgba(227,66,52,0.08); border-color: rgba(227,66,52,0.35);
+      color: var(--accent);
+    }
+
+    /* Empty / loading states */
+    .empty-state {
+      text-align: center; padding: 52px 24px; color: var(--muted);
+    }
+    .empty-state .eicon {
+      font-size: 2.2rem; margin-bottom: 14px;
+      display: flex; justify-content: center; color: var(--muted);
+    }
+    .empty-state h3 { color: var(--text); margin-bottom: 6px; font-size: 1.05rem; }
+    .empty-state p  { font-size: 0.85rem; }
+
+    /* Spinner */
+    .spinner {
+      width: 38px; height: 38px;
+      border: 3px solid var(--border); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin 0.75s linear infinite;
+      margin: 0 auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Loading overlay */
+    #overlay {
+      position: fixed; inset: 0; background: rgba(13,13,18,0.8);
+      z-index: 9000; display: none; place-items: center;
+    }
+    #overlay.on { display: grid; }
+    .ov-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; padding: 36px 52px; text-align: center;
+    }
+    .ov-card strong { display: block; font-size: 1rem; margin: 14px 0 4px; }
+    .ov-card p { color: var(--muted); font-size: 0.85rem; }
+
+    /* Toast */
+    #toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 18px; font-size: 0.84rem;
+      transform: translateY(80px); opacity: 0;
+      transition: all 0.25s; pointer-events: none; z-index: 9999;
+    }
+    #toast.show { transform: translateY(0); opacity: 1; }
+    #toast.ok   { border-color: var(--green); color: var(--green); }
+    #toast.err  { border-color: var(--accent); color: var(--accent); }
+
+    /* ── FILE SCAN TAB ── */
+    .scan-dropzone {
+      border: 2px dashed var(--border); border-radius: 14px;
+      padding: 52px 32px; text-align: center; cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      background: transparent; margin-bottom: 24px;
+    }
+    .scan-dropzone:hover, .scan-dropzone.drag {
+      border-color: var(--purple); background: var(--purple-dim);
+    }
+    .scan-dropzone .scan-icon {
+      font-size: 2.6rem; color: var(--muted); margin-bottom: 16px; display: block;
+    }
+    .scan-dropzone:hover .scan-icon, .scan-dropzone.drag .scan-icon { color: var(--purple); }
+    .scan-dropzone h3 { margin-bottom: 8px; font-size: 1.05rem; }
+    .scan-dropzone p { font-size: 0.83rem; color: var(--muted); line-height: 1.6; }
+    .scan-dropzone .file-types {
+      display: inline-flex; gap: 8px; margin-top: 12px;
+    }
+    .scan-dropzone .ft-badge {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 3px 10px; font-size: 0.75rem;
+      font-family: 'Consolas', monospace; color: var(--muted);
+    }
+
+    .scan-summary-bar {
+      background: var(--purple-dim); border: 1px solid rgba(167,139,250,0.25);
+      border-radius: 10px; padding: 13px 18px; margin-bottom: 18px;
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    }
+    .scan-summary-bar .ss-count {
+      font-weight: 700; font-size: 0.95rem; color: var(--purple);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .scan-summary-bar .ss-meta { font-size: 0.8rem; color: var(--muted); }
+    .scan-summary-bar .ss-warn {
+      font-size: 0.8rem; color: var(--yellow);
+      background: var(--yellow-dim); border-radius: 6px; padding: 3px 10px;
+    }
+
+    .prod-item-unknown {
+      border-color: rgba(167,139,250,0.3);
+      background: rgba(167,139,250,0.04);
+    }
+    .prod-item-unknown .prod-icon-ph { background: rgba(167,139,250,0.15); color: var(--purple); }
+    .prod-item-unknown .unknown-id {
+      font-size: 0.75rem; color: var(--muted); font-family: 'Consolas', monospace;
+      margin-bottom: 2px;
+    }
+    .type-sel {
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 7px 10px;
+      font-size: 0.85rem; width: 100%; cursor: pointer;
+    }
+    .type-sel:focus { outline: none; border-color: var(--purple); }
+
+    .scan-route-bar {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px; margin-bottom: 10px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 10px; font-size: 0.85rem;
+    }
+    .route-from { color: var(--muted); }
+    .route-to   { color: var(--blue); font-weight: 600; }
+
+    .scan-upload-bar {
+      display: flex; gap: 10px; align-items: center;
+      margin-top: 18px; padding-top: 18px;
+      border-top: 1px solid var(--border);
+    }
+    .price-unset-warn {
+      font-size: 0.8rem; color: var(--accent); display: none;
+    }
+
+    @media (max-width: 720px) {
+      .prod-item { grid-template-columns: 48px 1fr; }
+      .prod-item .prod-field:last-of-type,
+      .prod-item .price-col { grid-column: 1 / -1; }
+      #s-picker, #s-products { padding: 20px 14px; }
+    }
+
+    /* ── DEPLOY PANEL ── */
+    #deploy-panel {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; margin-bottom: 24px; overflow: hidden;
+    }
+    .dp-header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 14px 18px; cursor: pointer;
+      font-size: 0.9rem; font-weight: 700;
+      transition: background 0.15s; user-select: none;
+    }
+    .dp-header:hover { background: var(--surface2); }
+    .dp-title { flex: 1; }
+    .dp-badge {
+      font-size: 0.7rem; background: var(--green-dim); color: var(--green);
+      border: 1px solid rgba(92,184,92,0.3); border-radius: 20px; padding: 2px 9px;
+      display: none;
+    }
+    #deploy-panel.has-file .dp-badge { display: inline; }
+    .dp-chevron { font-size: 0.75rem; color: var(--muted); transition: transform 0.2s; }
+    #deploy-panel.open .dp-chevron { transform: rotate(180deg); }
+    .dp-body { display: none; padding: 0 18px 18px; border-top: 1px solid var(--border); }
+    #deploy-panel.open .dp-body { display: block; }
+
+    .dp-dz {
+      border: 2px dashed var(--border); border-radius: 10px;
+      padding: 16px 20px; cursor: pointer; margin: 16px 0 14px;
+      display: flex; align-items: center; justify-content: center; gap: 12px;
+      transition: border-color 0.2s, background 0.2s; font-size: 0.85rem; color: var(--muted);
+    }
+    .dp-dz:hover, .dp-dz.drag { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
+    .dp-dz.loaded { border-color: var(--green); border-style: solid; background: var(--green-dim); color: var(--green); }
+    .dp-dz i { font-size: 1.3rem; flex-shrink: 0; }
+
+    .dp-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .dp-field label {
+      display: block; font-size: 0.69rem; font-weight: 700;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 5px;
+    }
+    .dp-field-wide { grid-column: 1 / -1; }
+    .dp-icon-row { display: flex; align-items: center; gap: 8px; }
+    .dp-icon-preview {
+      width: 36px; height: 36px; border-radius: 6px; object-fit: cover;
+      border: 1px solid var(--border); background: var(--surface2); display: none; flex-shrink: 0;
+    }
+
+    .dp-footer {
+      margin-top: 14px; display: flex; align-items: center; gap: 14px;
+      padding-top: 14px; border-top: 1px solid var(--border); flex-wrap: wrap;
+    }
+    .dp-replace-row { display: flex; align-items: center; gap: 10px; }
+    .dp-replace-row strong { font-size: 0.85rem; display: block; }
+    .dp-replace-row span { font-size: 0.75rem; color: var(--muted); }
+
+    .dp-hint {
+      margin-top: 12px; font-size: 0.8rem; color: var(--accent);
+      background: var(--accent-dim); border: 1px solid rgba(227,66,52,0.2);
+      border-radius: 8px; padding: 9px 13px; display: flex; align-items: center; gap: 8px;
+    }
+    #deploy-status { font-size: 0.83rem; line-height: 1.6; }
+
+    /* Deploy mode: game cards show "Deploy here" cue */
+    #game-browser.deploy-mode .game-card:hover { border-color: var(--green); box-shadow: 0 8px 24px rgba(92,184,92,0.2); }
+    #game-browser.deploy-mode .game-card-overlay { background: rgba(0,0,0,0.6); }
+    #game-browser.deploy-mode .game-card:hover .game-card-overlay { display: flex; }
+    /* In deploy mode show deploy btn, hide lock btn; normal mode is reversed */
+    #game-browser.deploy-mode .game-card-overlay .deploy-here-btn { display: flex !important; }
+    #game-browser.deploy-mode .game-card-overlay .lock-btn { display: none !important; }
+    .deploy-here-btn {
+      background: var(--green); border: none; color: #0d0d12;
+      padding: 7px 14px; border-radius: 8px; cursor: pointer;
+      display: flex; align-items: center; gap: 6px; font-size: 0.82rem; font-weight: 700;
+    }
+
+    /* ── GAME CARD STATS (playing + ratio) ── */
+    .game-card-stats {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--border);
+      font-size: 0.67rem; color: var(--muted); gap: 4px;
+    }
+    .gcs-playing { display: flex; align-items: center; gap: 3px; }
+    .gcs-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+    .gcs-playing.zero .gcs-dot { background: var(--muted); }
+    .gcs-ratio { font-weight: 700; }
+    .gcs-ratio.high { color: var(--green); }
+    .gcs-ratio.mid  { color: var(--yellow); }
+    .gcs-ratio.low  { color: var(--accent); }
+
+    /* ── PROFILE BUTTON ── */
+    .profile-btn {
+      display: flex; align-items: center; gap: 8px;
+      background: none; border: 1px solid transparent; border-radius: 10px;
+      padding: 5px 10px; cursor: pointer; color: var(--text);
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .profile-btn:hover { border-color: var(--border); background: var(--surface2); }
+
+    /* ── DRAWER OVERLAY ── */
+    #drawer-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      z-index: 200; display: none; cursor: pointer;
+    }
+    #drawer-overlay.on { display: block; }
+
+    /* ── PROFILE DRAWER ── */
+    #profile-drawer {
+      position: fixed; top: 0; right: 0; width: 360px; height: 100vh;
+      background: var(--surface); border-left: 1px solid var(--border);
+      z-index: 201; display: flex; flex-direction: column;
+      transform: translateX(100%); transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+      overflow: hidden;
+    }
+    #profile-drawer.open { transform: translateX(0); }
+
+    .drawer-header {
+      display: flex; align-items: center; gap: 12px;
+      padding: 18px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    .drawer-header img {
+      width: 44px; height: 44px; border-radius: 50%; object-fit: cover;
+      border: 2px solid var(--border); flex-shrink: 0;
+    }
+    .drawer-header strong { font-size: 1rem; font-weight: 700; flex: 1; }
+    #drawer-close {
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      font-size: 1.1rem; padding: 4px; line-height: 1; transition: color 0.15s;
+    }
+    #drawer-close:hover { color: var(--text); }
+
+    .drawer-tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .dtab {
+      flex: 1; background: none; border: none; border-bottom: 2px solid transparent;
+      padding: 11px 0; margin-bottom: -1px; cursor: pointer;
+      font-size: 0.85rem; font-weight: 600; color: var(--muted);
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .dtab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .dtab:hover  { color: var(--text); }
+
+    .dtab-pane { display: none; overflow-y: auto; flex: 1; padding: 20px; }
+    .dtab-pane.active { display: block; }
+
+    .drawer-stat-section { margin-bottom: 24px; }
+    .drawer-stat-section h4 {
+      font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.09em; color: var(--muted); margin-bottom: 12px;
+    }
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .stat-card {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px 14px;
+    }
+    .stat-card .sc-label {
+      font-size: 0.72rem; color: var(--muted); margin-bottom: 4px;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .stat-card .sc-val { font-size: 1.1rem; font-weight: 800; color: var(--text); }
+
+    .drawer-group-stat {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px 14px; margin-bottom: 10px;
+    }
+    .dgs-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .dgs-header img { width: 24px; height: 24px; border-radius: 4px; object-fit: cover; }
+    .dgs-header strong { font-size: 0.88rem; font-weight: 700; flex: 1; }
+    .dgs-header .dgs-role {
+      font-size: 0.72rem; color: var(--muted);
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 6px; padding: 2px 7px;
+    }
+    .dgs-stats { display: flex; gap: 12px; font-size: 0.78rem; color: var(--muted); flex-wrap: wrap; }
+    .dgs-stats span { display: flex; align-items: center; gap: 4px; }
+
+    /* Settings tab */
+    .setting-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 13px 0; border-bottom: 1px solid var(--border);
+    }
+    .setting-row:last-child { border-bottom: none; }
+    .setting-info { flex: 1; }
+    .setting-info strong { font-size: 0.88rem; display: block; margin-bottom: 2px; }
+    .setting-info span { font-size: 0.77rem; color: var(--muted); }
+    .toggle-switch {
+      position: relative; width: 40px; height: 22px; flex-shrink: 0; cursor: pointer;
+    }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .toggle-track {
+      position: absolute; inset: 0; background: var(--surface2);
+      border: 1px solid var(--border); border-radius: 20px; transition: 0.2s;
+    }
+    .toggle-switch input:checked + .toggle-track { background: var(--accent); border-color: var(--accent); }
+    .toggle-thumb {
+      position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+      background: var(--muted); border-radius: 50%; transition: 0.2s; pointer-events: none;
+    }
+    .toggle-switch input:checked ~ .toggle-thumb { left: 20px; background: #fff; }
+
+    /* ── GROUP STATS ROW ── */
+    .grp-stats {
+      display: flex; gap: 10px; margin-top: 4px;
+      font-size: 0.72rem; color: var(--muted); flex-wrap: wrap;
+    }
+    .grp-stats span { display: flex; align-items: center; gap: 3px; }
+
+    /* ── MY PROFILE SECTION ── */
+    .profile-section-hdr {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 14px; margin-top: 4px;
+    }
+    .profile-section-hdr img {
+      width: 30px; height: 30px; border-radius: 50%; object-fit: cover;
+      border: 2px solid var(--border);
+    }
+    .profile-section-hdr strong { font-size: 0.88rem; }
+
+    /* ── GAME CARD OVERLAY (lock button) ── */
+    .game-card { position: relative; }
+    .game-card-overlay {
+      position: absolute; inset: 0; background: rgba(0,0,0,0.55);
+      display: none; align-items: center; justify-content: center;
+      border-radius: 12px;
+    }
+    .game-card:hover .game-card-overlay { display: flex; }
+    .lock-btn {
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); padding: 7px 13px; border-radius: 8px; cursor: pointer;
+      display: flex; align-items: center; gap: 6px; font-size: 0.82rem; font-weight: 600;
+      transition: opacity 0.15s;
+    }
+    .lock-btn:hover { opacity: 0.8; }
+    .lock-btn.is-private { color: var(--accent); border-color: rgba(227,66,52,0.4); }
+    .lock-btn.is-public  { color: var(--green);  border-color: rgba(92,184,92,0.4); }
+
+    .dp-radio-row {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 11px 0; border-bottom: 1px solid var(--border); cursor: pointer;
+    }
+    .dp-radio-row:last-child { border-bottom: none; }
+    .dp-radio-row input[type="radio"] { margin-top: 3px; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
+    .dp-radio-row strong { font-size: 0.85rem; display: block; margin-bottom: 2px; }
+    .dp-radio-row span { font-size: 0.75rem; color: var(--muted); line-height: 1.4; }
+
+    /* API key row */
+    .dp-apikey-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding: 10px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; }
+    .dp-apikey-row i { color: var(--yellow); font-size: 0.9rem; flex-shrink: 0; }
+    .dp-apikey-row input { flex: 1; background: none; border: none; outline: none; color: var(--text); font-size: 0.82rem; font-family: monospace; }
+    .dp-apikey-row input::placeholder { color: var(--muted); font-family: 'Segoe UI', system-ui, sans-serif; }
+    .dp-apikey-missing { font-size: 0.78rem; color: var(--yellow); display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+
+    /* Group collapsible */
+    .group-row { cursor: pointer; user-select: none; }
+    .grp-chevron { margin-left: auto; color: var(--muted); font-size: 0.75rem; transition: transform 0.2s; }
+    .group-section.collapsed .grp-chevron { transform: rotate(-90deg); }
+    .grp-games { overflow: hidden; transition: max-height 0.25s ease; }
+    .group-section.collapsed .grp-games { max-height: 0 !important; }
+
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <img class="brand-logo" src="RobloxSquare.png" alt="Roblox"
+       onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+  <div class="logo" style="display:none"><i class="fa-solid fa-gamepad"></i></div>
+  <div class="header-right" id="hdr-user" style="display:none">
+    <button id="profile-btn" class="profile-btn">
+      <img class="user-avatar" id="hdr-avatar" src="" alt="">
+      <span class="user-name" id="hdr-uname"></span>
+      <i class="fa-solid fa-chevron-down" style="font-size:0.7rem;color:var(--muted)"></i>
+    </button>
+    <span class="connected-badge"><i class="fa-solid fa-circle"></i> Connected</span>
+    <button class="btn btn-ghost btn-sm" id="disconnect-btn">Disconnect</button>
+  </div>
+</header>
+
+<!-- ══ STEP 1: AUTH ══ -->
+<div id="s-auth">
+  <div class="auth-card">
+    <div class="auth-icon"><i class="fa-solid fa-key"></i></div>
+    <h2>Connect your account</h2>
+    <p class="sub">
+      Paste your <strong>.ROBLOSECURITY</strong> cookie to authenticate.
+      Everything runs locally — your cookie never leaves this machine.
+    </p>
+    <div id="auth-err" class="errbox"></div>
+    <div class="inp-wrap">
+      <input type="password" id="cookie-inp" class="inp"
+             placeholder=".ROBLOSECURITY value…" style="padding-right:42px">
+      <button class="toggle-vis" id="vis-btn" title="Show / hide">
+        <i class="fa-regular fa-eye" id="vis-icon"></i>
+      </button>
+    </div>
+    <button class="btn btn-primary" id="connect-btn" style="width:100%">
+      Connect <i class="fa-solid fa-arrow-right"></i>
+    </button>
+    <div class="auth-note">
+      <strong>How to get your cookie:</strong><br>
+      Open Roblox.com → press <code>F12</code> → Application tab →
+      Cookies → <code>https://www.roblox.com</code> → copy the value
+      of <code>.ROBLOSECURITY</code>
+    </div>
+  </div>
+</div>
+
+<!-- ══ STEP 2: GAME PICKER ══ -->
+<div id="s-picker">
+  <div class="picker-head">
+    <h2>Select a Game</h2>
+    <p>Choose which game's products you want to manage.</p>
+  </div>
+
+  <!-- ── DEPLOY PANEL ── -->
+  <div id="deploy-panel">
+    <div class="dp-header" id="dp-toggle">
+      <i class="fa-solid fa-rocket" style="color:var(--accent)"></i>
+      <span class="dp-title">Upload &amp; Deploy a Game</span>
+      <span class="dp-badge">File loaded</span>
+      <i class="fa-solid fa-chevron-down dp-chevron"></i>
+    </div>
+    <div class="dp-body">
+      <input type="file" id="dp-file-inp" accept=".rbxl,.rbxlx,.rbxmx,.xml" style="display:none">
+      <div class="dp-dz" id="dp-dz">
+        <i class="fa-solid fa-file-arrow-up"></i>
+        <span id="dp-dz-label">Drop a .rbxl / .rbxlx / .rbxmx file here, or click to browse</span>
+      </div>
+
+      <div class="dp-apikey-row">
+        <i class="fa-solid fa-key"></i>
+        <input type="password" id="dp-api-key" placeholder="Open Cloud API Key (required to upload)" autocomplete="off">
+        <a href="https://create.roblox.com/dashboard/credentials" target="_blank" rel="noopener"
+           style="flex-shrink:0;font-size:0.75rem;color:var(--blue);text-decoration:none;white-space:nowrap;display:flex;align-items:center;gap:4px">
+          Get key <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.65rem"></i>
+        </a>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+        <button class="btn btn-primary" id="dp-deploy-btn" style="flex:1;display:none">
+          <i class="fa-solid fa-rocket"></i> Select Games &amp; Deploy
+        </button>
+        <button class="btn btn-ghost btn-sm" id="dp-clear-btn" style="display:none">
+          <i class="fa-solid fa-xmark"></i> Clear
+        </button>
+      </div>
+      <div id="deploy-status"></div>
+    </div>
+  </div>
+
+  <div id="picker-err" class="errbox"></div>
+  <div id="game-browser"></div>
+</div>
+
+<!-- ══ STEP 3: PRODUCTS ══ -->
+<div id="s-products">
+  <div class="prod-header">
+    <img class="game-icon-hdr" id="sel-icon" src="" alt="" style="display:none">
+    <div class="game-icon-hdr-ph" id="sel-icon-ph"><i class="fa-solid fa-gamepad"></i></div>
+    <div class="game-hdr-info">
+      <h2 id="sel-name"></h2>
+      <p id="sel-uid"></p>
+    </div>
+    <div class="prod-actions">
+      <button class="btn btn-ghost btn-sm" id="back-btn">
+        <i class="fa-solid fa-arrow-left"></i> Back
+      </button>
+      <button class="btn btn-green" id="upload-btn">
+        <i class="fa-solid fa-upload"></i> Upload Changes
+      </button>
+    </div>
+  </div>
+
+  <div id="prod-err" class="errbox"></div>
+  <div id="upd-summary"></div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <span class="tb-label"><i class="fa-solid fa-scissors"></i> Divide prices by</span>
+    <input type="number" id="divider-inp" class="divider-inp" value="2" min="1" step="0.1">
+    <button class="btn btn-secondary btn-sm" id="apply-div-btn">Apply to Tab</button>
+    <span class="tb-preview" id="div-preview"></span>
+    <button class="btn btn-ghost btn-sm" id="reset-btn" style="margin-left:auto">
+      <i class="fa-solid fa-rotate-left"></i> Reset Prices
+    </button>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="passes">
+      <i class="fa-solid fa-ticket"></i> Game Passes
+      <span class="tab-badge" id="tab-gp-count">0</span>
+    </button>
+    <button class="tab-btn" data-tab="devprods">
+      <i class="fa-solid fa-cart-shopping"></i> Developer Products
+      <span class="tab-badge" id="tab-dp-count">0</span>
+    </button>
+    <button class="tab-btn" data-tab="scan">
+      <i class="fa-solid fa-file-code"></i> Scan File
+    </button>
+  </div>
+
+  <!-- Tab panes -->
+  <div id="pane-passes" class="tab-pane active"></div>
+  <div id="pane-devprods" class="tab-pane"></div>
+
+  <div id="pane-scan" class="tab-pane">
+    <div class="scan-dropzone" id="scan-dropzone">
+      <input type="file" id="scan-file-inp" accept=".rbxmx,.rbxl,.rbxlx,.xml" style="display:none">
+      <i class="fa-solid fa-file-code scan-icon"></i>
+      <h3>Scan a place or model file</h3>
+      <p>Drop a file here or click to browse. All script sources will be<br>
+         scanned for product IDs that belong to this game.</p>
+      <div class="file-types">
+        <span class="ft-badge">.rbxmx</span>
+        <span class="ft-badge">.rbxl</span>
+        <span class="ft-badge">.rbxlx</span>
+      </div>
+    </div>
+    <div id="scan-results"></div>
+  </div>
+</div>
+
+<!-- OVERLAY -->
+<div id="overlay">
+  <div class="ov-card">
+    <div class="spinner"></div>
+    <strong id="ov-title">Loading…</strong>
+    <p id="ov-sub">Please wait</p>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- PROFILE DRAWER -->
+<div id="drawer-overlay"></div>
+<aside id="profile-drawer">
+  <div class="drawer-header">
+    <img id="drawer-avatar" src="" alt="">
+    <strong id="drawer-uname"></strong>
+    <button id="drawer-close" title="Close"><i class="fa-solid fa-xmark"></i></button>
+  </div>
+  <div class="drawer-tabs">
+    <button class="dtab active" data-dtab="stats">Stats</button>
+    <button class="dtab" data-dtab="settings">Settings</button>
+  </div>
+  <div id="dtab-stats" class="dtab-pane active"></div>
+  <div id="dtab-settings" class="dtab-pane">
+    <div class="setting-row">
+      <div class="setting-info">
+        <strong>Display My Profile</strong>
+        <span>Show your personal games at the top of the picker</span>
+      </div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="st-display-profile" checked>
+        <div class="toggle-track"></div>
+        <div class="toggle-thumb"></div>
+      </label>
+    </div>
+    <div class="setting-row">
+      <div class="setting-info">
+        <strong>Display Groups</strong>
+        <span>Show group games in the picker</span>
+      </div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="st-display-groups" checked>
+        <div class="toggle-track"></div>
+        <div class="toggle-thumb"></div>
+      </label>
+    </div>
+    <div class="setting-row">
+      <div class="setting-info">
+        <strong>Show Group Stats</strong>
+        <span>Show visit/favorite/playing stats under each group</span>
+      </div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="st-group-stats" checked>
+        <div class="toggle-track"></div>
+        <div class="toggle-thumb"></div>
+      </label>
+    </div>
+  </div>
+</aside>
+
+<script>
+/* ══════════════════════════════════════════════
+   STATE
+══════════════════════════════════════════════ */
+const S = {
+  cookie:     '',
+  user:       null,
+  games:      null,
+  game:       null,
+  products:   null,
+  origPrices: {},
+  newPrices:  {},
+  activeTab:  'passes',
+  scanMatches:   [],
+  scanGame:      null,
+  scanFileContent: null,
+  scanFilename:    null,
+  deploy: { text: null, filename: null, base64: null, deployed: 0, mode: 'products', publishMode: 'replace' },
+};
+
+/* ══════════════════════════════════════════════
+   HELPERS
+══════════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function fmtNum(n) {
+  n = Number(n) || 0;
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+  return String(n);
+}
+
+/* ── Settings (localStorage) ── */
+const SETTINGS_KEY = 'rblx_mgr_settings';
+function loadSettings()        { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); } catch { return {}; } }
+function saveSettings(s)       { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }
+function getSetting(key, def)  { const s = loadSettings(); return key in s ? s[key] : def; }
+function setSetting(key, val)  { const s = loadSettings(); s[key] = val; saveSettings(s); }
+
+let toastT;
+function toast(msg, type = '', dur = 2800) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.className = 'show' + (type ? ' ' + type : '');
+  clearTimeout(toastT);
+  toastT = setTimeout(() => el.className = '', dur);
+}
+
+function loading(title, sub = 'Please wait…') {
+  $('ov-title').textContent = title;
+  $('ov-sub').textContent   = sub;
+  $('overlay').classList.add('on');
+}
+function hideLoading() { $('overlay').classList.remove('on'); }
+
+async function api(path, body) {
+  const r = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+  return d;
+}
+
+function showStep(name) {
+  ['s-auth', 's-picker', 's-products'].forEach(id => {
+    const el = $(id);
+    el.style.display = (id === 's-' + name)
+      ? (name === 'auth' ? 'flex' : 'block')
+      : 'none';
+  });
+  $('hdr-user').style.display = name !== 'auth' ? 'flex' : 'none';
+}
+
+/* ══════════════════════════════════════════════
+   TABS
+══════════════════════════════════════════════ */
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
+function switchTab(name) {
+  S.activeTab = name;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  ['passes', 'devprods', 'scan'].forEach(t => {
+    $('pane-' + t).classList.toggle('active', t === name);
+  });
+  updateDivPreview();
+  // Show/hide Upload Changes — not applicable on scan tab (scan has its own button)
+  $('upload-btn').style.display = name === 'scan' ? 'none' : '';
+}
+
+/* ══════════════════════════════════════════════
+   STEP 1 — AUTH
+══════════════════════════════════════════════ */
+$('vis-btn').addEventListener('click', () => {
+  const inp  = $('cookie-inp');
+  const icon = $('vis-icon');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  icon.classList.toggle('fa-eye');
+  icon.classList.toggle('fa-eye-slash');
+});
+
+$('cookie-inp').addEventListener('keydown', e => {
+  if (e.key === 'Enter') $('connect-btn').click();
+});
+
+$('connect-btn').addEventListener('click', async () => {
+  const cookie = $('cookie-inp').value.trim();
+  if (!cookie) {
+    $('auth-err').textContent = 'Please paste your .ROBLOSECURITY cookie.';
+    $('auth-err').style.display = 'block'; return;
+  }
+  $('auth-err').style.display = 'none';
+  $('connect-btn').disabled = true;
+  $('connect-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Connecting…';
+  try {
+    const user = await api('/api/auth', { cookie });
+    S.cookie = cookie;
+    S.user   = user;
+    const av = $('hdr-avatar');
+    if (user.avatar) { av.src = user.avatar; av.style.display = ''; }
+    else av.style.display = 'none';
+    $('hdr-uname').textContent = user.displayName || user.name;
+    showStep('picker');
+    loadGames();
+  } catch (e) {
+    $('auth-err').innerHTML = `<strong>Auth failed:</strong> ${esc(e.message)}`;
+    $('auth-err').style.display = 'block';
+  } finally {
+    $('connect-btn').disabled = false;
+    $('connect-btn').innerHTML = 'Connect <i class="fa-solid fa-arrow-right"></i>';
+  }
+});
+
+$('disconnect-btn').addEventListener('click', () => {
+  closeDrawer();
+  clearDeployPanel();
+  Object.assign(S, { cookie:'', user:null, games:null, game:null, products:null,
+                     origPrices:{}, newPrices:{}, activeTab:'passes', scanMatches:[],
+                     scanGame:null, scanFileContent:null, scanFilename:null,
+                     deploy: { text: null, filename: null, base64: null, deployed: 0, mode: 'products', publishMode: 'replace' } });
+  $('cookie-inp').value = '';
+  showStep('auth');
+});
+
+/* ══════════════════════════════════════════════
+   STEP 2 — GAME PICKER
+══════════════════════════════════════════════ */
+async function loadGames() {
+  $('picker-err').style.display = 'none';
+  $('game-browser').innerHTML = '<div class="empty-state"><div class="spinner"></div><p style="margin-top:16px">Loading groups and games…</p></div>';
+  loading('Loading games…', 'Fetching your groups and game list');
+  try {
+    const data = await api('/api/games', { cookie: S.cookie, userId: S.user.id });
+    S.games = data;
+    renderPicker(data);
+  } catch (e) {
+    $('picker-err').innerHTML = `<strong>Failed to load games:</strong> ${esc(e.message)}`;
+    $('picker-err').style.display = 'block';
+    $('game-browser').innerHTML = '';
+  } finally {
+    hideLoading();
+  }
+}
+
+function renderPicker({ myGames, groups }) {
+  const showProfile  = getSetting('displayMyProfile', true);
+  const showGroups   = getSetting('displayGroups',    true);
+  const showGrpStats = getSetting('showGroupStats',   true);
+
+  let html = '';
+
+  if (myGames && myGames.length && showProfile) {
+    html += `<div class="sec-label">My Profile (${myGames.length})</div>`;
+    if (S.user) {
+      html += `<div class="profile-section-hdr">
+        ${S.user.avatar ? `<img src="${esc(S.user.avatar)}" alt="">` : ''}
+        <strong>${esc(S.user.displayName || S.user.name)}</strong>
+      </div>`;
+    }
+    html += `<div class="game-grid">${myGames.map(g => gameCard(g)).join('')}</div>`;
+  }
+
+  if (groups && groups.length && showGroups) {
+    groups.forEach(grp => {
+      const hasStats = showGrpStats && (grp.totalVisits || grp.totalFavorites || grp.totalPlaying);
+      const statsHtml = hasStats ? `
+        <div class="grp-stats">
+          <span><i class="fa-solid fa-eye"></i> ${fmtNum(grp.totalVisits)}</span>
+          <span><i class="fa-solid fa-star"></i> ${fmtNum(grp.totalFavorites)}</span>
+          <span><i class="fa-solid fa-circle" style="font-size:0.5rem;color:var(--green)"></i> ${fmtNum(grp.totalPlaying)}</span>
+        </div>` : '';
+      const gamesHtml = grp.games.map(g => gameCard(g)).join('');
+      const grpId = esc(grp.id);
+
+      html += `
+        <div class="group-section" data-grpid="${grpId}">
+          <div class="group-row">
+            ${grp.icon
+              ? `<img class="grp-img" src="${esc(grp.icon)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'">`
+              : ''}
+            <div class="grp-ph" style="${grp.icon ? 'display:none' : ''}"><i class="fa-solid fa-users"></i></div>
+            <div>
+              <div class="grp-name">${esc(grp.name)}</div>
+              <div class="grp-meta">${esc(grp.role)} · ${grp.games.length} game${grp.games.length !== 1 ? 's' : ''}</div>
+              ${statsHtml}
+            </div>
+            <i class="fa-solid fa-chevron-down grp-chevron"></i>
+          </div>
+          <div class="grp-games">
+            <div class="game-grid">${gamesHtml}</div>
+          </div>
+        </div>`;
+    });
+  }
+
+  if (!html) {
+    html = `<div class="empty-state">
+      <div class="eicon"><i class="fa-solid fa-gamepad"></i></div>
+      <h3>No games found</h3>
+      <p>No games were found in your account or groups with developer access.</p>
+    </div>`;
+  }
+
+  $('game-browser').innerHTML = html;
+
+  $('game-browser').querySelectorAll('.game-card').forEach(card => {
+    card.addEventListener('click', e => {
+      if (e.target.closest('.lock-btn')) return;
+      selectGame({
+        id:      card.dataset.id,
+        name:    card.dataset.name,
+        icon:    card.dataset.icon || null,
+        placeId: card.dataset.placeid || null,
+      });
+    });
+  });
+
+  $('game-browser').querySelectorAll('.lock-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const card = btn.closest('.game-card');
+      togglePrivacy(card.dataset.id, card.dataset.active === 'true');
+    });
+  });
+
+  // Group collapse/expand
+  $('game-browser').querySelectorAll('.group-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const section = row.closest('.group-section');
+      const games   = section.querySelector('.grp-games');
+      const isCollapsed = section.classList.contains('collapsed');
+      if (isCollapsed) {
+        section.classList.remove('collapsed');
+        games.style.maxHeight = games.scrollHeight + 'px';
+      } else {
+        games.style.maxHeight = games.scrollHeight + 'px'; // set explicit before collapsing
+        requestAnimationFrame(() => section.classList.add('collapsed'));
+      }
+    });
+    // Set initial max-height so CSS transition works
+    const games = row.closest('.group-section').querySelector('.grp-games');
+    games.style.maxHeight = games.scrollHeight + 'px';
+  });
+}
+
+function gameCard(g) {
+  const active = g.isActive !== false;
+
+  // Playing count
+  const playing = g.playing || 0;
+  const playingHtml = `
+    <span class="gcs-playing${playing === 0 ? ' zero' : ''}">
+      <span class="gcs-dot"></span>${fmtNum(playing)}
+    </span>`;
+
+  // Like ratio
+  let ratioHtml = '';
+  if (g.likeRatio !== null && g.likeRatio !== undefined) {
+    const rCls = g.likeRatio >= 80 ? 'high' : g.likeRatio >= 60 ? 'mid' : 'low';
+    ratioHtml = `<span class="gcs-ratio ${rCls}">👍 ${g.likeRatio}%</span>`;
+  }
+
+  return `
+    <div class="game-card"
+      data-id="${esc(g.id)}" data-name="${esc(g.name)}" data-icon="${esc(g.icon || '')}"
+      data-placeid="${esc(g.placeId || '')}" data-active="${active}">
+      ${g.icon
+        ? `<img class="game-thumb" src="${esc(g.icon)}" alt="" loading="lazy"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='grid'">`
+        : ''}
+      <div class="game-thumb-ph" style="${g.icon ? 'display:none' : ''}">
+        <i class="fa-solid fa-gamepad"></i>
+      </div>
+      <div class="game-card-body">
+        <div class="game-card-name">${esc(g.name)}</div>
+        <div class="game-card-sub">ID: ${esc(g.id)}</div>
+        <div class="game-card-stats">${playingHtml}${ratioHtml}</div>
+      </div>
+      <div class="game-card-overlay">
+        <button class="deploy-here-btn" style="display:none">
+          <i class="fa-solid fa-rocket"></i> Deploy here
+        </button>
+        <button class="lock-btn ${active ? 'is-public' : 'is-private'}"
+                title="${active ? 'Make Private' : 'Make Public'}">
+          <i class="fa-solid ${active ? 'fa-lock-open' : 'fa-lock'}"></i>
+          ${active ? 'Private' : 'Public'}
+        </button>
+      </div>
+    </div>`;
+}
+
+/* ══════════════════════════════════════════════
+   STEP 3 — PRODUCTS
+══════════════════════════════════════════════ */
+async function selectGame(game) {
+  S.game            = game;
+  S.products        = null;
+  S.origPrices      = {};
+  S.newPrices       = {};
+  S.scanMatches     = [];
+  S.scanGame        = null;
+  S.scanFileContent = null;
+  S.scanFilename    = null;
+  S.activeTab       = 'passes';
+
+  const iconEl = $('sel-icon'), phEl = $('sel-icon-ph');
+  if (game.icon) {
+    iconEl.src = game.icon; iconEl.style.display = ''; phEl.style.display = 'none';
+  } else {
+    iconEl.style.display = 'none'; phEl.style.display = 'grid';
+  }
+  $('sel-name').textContent = game.name;
+  $('sel-uid').textContent  = `Universe ID: ${game.id}${game.placeId ? ` · Place ID: ${game.placeId}` : ''}`;
+  $('upd-summary').style.display = 'none';
+  $('prod-err').style.display    = 'none';
+
+  // Reset tabs
+  switchTab('passes');
+
+  // Show loading placeholders
+  $('pane-passes').innerHTML = '<div class="empty-state"><div class="spinner"></div><p style="margin-top:14px">Fetching products…</p></div>';
+  $('pane-devprods').innerHTML = '';
+  $('scan-results').innerHTML = '';
+
+  showStep('products');
+  loading('Loading products…', `Fetching passes & dev products for "${game.name}"`);
+
+  try {
+    const data = await api('/api/game-products', { cookie: S.cookie, universeId: game.id });
+    S.products = data;
+    const all  = [...(data.gamePasses || []), ...(data.devProducts || [])];
+    all.forEach(p => {
+      S.origPrices[p.id] = p.price ?? 0;
+      S.newPrices[p.id]  = p.price ?? 0;
+    });
+
+    if (data._errors && data._errors.length) {
+      const hasCreatorErr = data._errors.some(e => /creator access/i.test(e));
+      $('prod-err').innerHTML =
+        `<strong>${hasCreatorErr ? '🔒 Creator access required' : '⚠ Some data may be missing'}:</strong><br>` +
+        data._errors.map(e => esc(e)).join('<br>') +
+        (hasCreatorErr ? `<br><br><em>To manage developer products and game passes, the logged-in account must be the one that originally published this game.</em>` : '');
+      $('prod-err').style.display = 'block';
+    }
+
+    renderProducts(data);
+    updateDivPreview();
+  } catch (e) {
+    $('prod-err').innerHTML = `<strong>Failed to load products:</strong> ${esc(e.message)}`;
+    $('prod-err').style.display = 'block';
+    $('pane-passes').innerHTML = '';
+  } finally {
+    hideLoading();
+  }
+}
+
+function renderProducts({ gamePasses, devProducts }) {
+  $('tab-gp-count').textContent = gamePasses.length;
+  $('tab-dp-count').textContent = devProducts.length;
+
+  // Game Passes pane
+  if (gamePasses.length) {
+    $('pane-passes').innerHTML = `<div class="prod-list">${gamePasses.map(p => prodRow(p)).join('')}</div>`;
+  } else {
+    $('pane-passes').innerHTML = `<div class="empty-state">
+      <div class="eicon"><i class="fa-solid fa-ticket"></i></div>
+      <h3>No game passes</h3><p>This game has no game passes yet.</p>
+    </div>`;
+  }
+
+  // Dev Products pane
+  if (devProducts.length) {
+    $('pane-devprods').innerHTML = `<div class="prod-list">${devProducts.map(p => prodRow(p)).join('')}</div>`;
+  } else {
+    $('pane-devprods').innerHTML = `<div class="empty-state">
+      <div class="eicon"><i class="fa-solid fa-cart-shopping"></i></div>
+      <h3>No developer products</h3><p>This game has no developer products yet.</p>
+    </div>`;
+  }
+
+  // Price input listeners
+  ['pane-passes', 'pane-devprods'].forEach(paneId => {
+    $(paneId).addEventListener('input', e => {
+      const el = e.target;
+      if (el.classList.contains('new-price-inp') && el.dataset.id) {
+        const val = Math.max(0, Math.round(parseFloat(el.value) || 0));
+        S.newPrices[el.dataset.id] = val;
+        el.classList.toggle('unset', val === 0);
+      }
+    });
+  });
+}
+
+function prodRow(p, scanMode = false) {
+  const orig   = S.origPrices[p.id] ?? 0;
+  const newP   = S.newPrices[p.id]  ?? orig;
+  const divVal = parseFloat($('divider-inp').value) || 1;
+  const iconFA = p.type === 'Game Pass' ? 'fa-ticket' : 'fa-cart-shopping';
+
+  return `
+    <div class="prod-item" data-id="${esc(p.id)}" data-type="${esc(p.type)}">
+      ${p.icon
+        ? `<img class="prod-icon" src="${esc(p.icon)}" alt="" loading="lazy"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='grid'">`
+        : ''}
+      <div class="prod-icon-ph" style="${p.icon ? 'display:none' : ''}">
+        <i class="fa-solid ${iconFA}"></i>
+      </div>
+
+      <div class="prod-field">
+        <label>Name</label>
+        <input class="inp" type="text" value="${esc(p.name)}"
+               data-id="${esc(p.id)}" data-field="name" placeholder="Product name…"
+               ${scanMode ? 'readonly' : ''}>
+      </div>
+
+      <div class="prod-field">
+        <label>Description</label>
+        <textarea class="inp" data-id="${esc(p.id)}" data-field="description"
+                  placeholder="Description…"
+                  ${scanMode ? 'readonly' : ''}>${esc(p.description)}</textarea>
+      </div>
+
+      <div class="price-col">
+        <div class="price-col-label">Original Price</div>
+        <div class="orig-price-display" data-orig="${esc(p.id)}">R$ ${esc(orig)}</div>
+        <div class="price-arrow-label">
+          ÷ <span class="divisor">${divVal}</span> =
+        </div>
+        <div class="price-col-label" style="margin-top:2px">New Price</div>
+        <input type="number" class="new-price-inp${newP === 0 && orig > 0 ? ' unset' : ''}"
+               min="0" step="1" value="${newP}" data-id="${esc(p.id)}">
+      </div>
+    </div>`;
+}
+
+function unknownRow(p) {
+  const newP = S.newPrices[p.id] ?? '';
+  return `
+    <div class="prod-item prod-item-unknown" data-id="${esc(p.id)}" data-type="${esc(p.type)}" data-unknown="1">
+      <div class="prod-icon-ph"><i class="fa-solid fa-question"></i></div>
+      <div class="prod-field">
+        <div class="unknown-id">ID: ${esc(p.id)}</div>
+        <label>Type</label>
+        <select class="type-sel" data-id="${esc(p.id)}">
+          <option value="Developer Product" ${p.type === 'Developer Product' ? 'selected' : ''}>Developer Product</option>
+          <option value="Game Pass" ${p.type === 'Game Pass' ? 'selected' : ''}>Game Pass</option>
+        </select>
+      </div>
+      <div class="prod-field" style="flex:1">
+        <label>Name <span style="color:var(--muted);font-weight:400">(optional — preserves current if blank)</span></label>
+        <input class="inp" type="text" value="${esc(p.name)}"
+               data-id="${esc(p.id)}" data-field="name" placeholder="Leave blank to preserve current name…">
+      </div>
+      <div class="price-col">
+        <div class="price-col-label">New Price</div>
+        <input type="number" class="new-price-inp"
+               min="0" step="1" value="${newP}" data-id="${esc(p.id)}" placeholder="0">
+      </div>
+    </div>`;
+}
+
+/* ══════════════════════════════════════════════
+   DIVIDER TOOLBAR
+══════════════════════════════════════════════ */
+function updateDivPreview() {
+  if (!S.products) return;
+  const items = getActiveTabProducts();
+  const ex    = items.find(p => (p.price ?? 0) > 0);
+  const div   = parseFloat($('divider-inp').value) || 1;
+  if (ex) {
+    const newP = Math.max(0, Math.round(ex.price / div));
+    $('div-preview').innerHTML =
+      `Example: <b>R$ ${ex.price}</b> <span class="arrow">→</span> <b>R$ ${newP}</b>`;
+  } else {
+    $('div-preview').textContent = '';
+  }
+}
+
+function getActiveTabProducts() {
+  if (!S.products) return [];
+  if (S.activeTab === 'passes')   return S.products.gamePasses  || [];
+  if (S.activeTab === 'devprods') return S.products.devProducts || [];
+  if (S.activeTab === 'scan')     return S.scanMatches;
+  return [];
+}
+
+$('divider-inp').addEventListener('input', updateDivPreview);
+
+$('apply-div-btn').addEventListener('click', () => {
+  const div = parseFloat($('divider-inp').value);
+  if (!div || div <= 0) { toast('Invalid divider', 'err'); return; }
+
+  const items = getActiveTabProducts();
+  if (!items.length) { toast('No products in this tab', 'err'); return; }
+
+  const paneId = S.activeTab === 'scan' ? 'scan-results'
+               : S.activeTab === 'passes' ? 'pane-passes' : 'pane-devprods';
+
+  $(paneId).querySelectorAll('.prod-item').forEach(item => {
+    const id   = item.dataset.id;
+    const orig = S.origPrices[id] ?? 0;
+    const newP = Math.max(0, Math.round(orig / div));
+    S.newPrices[id] = newP;
+    const inp   = item.querySelector('.new-price-inp');
+    const arrow = item.querySelector('.price-arrow-label');
+    if (inp)   { inp.value = newP; inp.classList.toggle('unset', newP === 0 && orig > 0); }
+    if (arrow) arrow.innerHTML = `÷ <span class="divisor">${div}</span> =`;
+  });
+
+  updateDivPreview();
+  toast(`Applied ÷${div} to ${items.length} products`, 'ok');
+});
+
+$('reset-btn').addEventListener('click', () => {
+  if (!S.products) return;
+  const paneId = S.activeTab === 'scan' ? 'scan-results'
+               : S.activeTab === 'passes' ? 'pane-passes' : 'pane-devprods';
+
+  $(paneId).querySelectorAll('.prod-item').forEach(item => {
+    const id   = item.dataset.id;
+    const orig = S.origPrices[id] ?? 0;
+    S.newPrices[id] = orig;
+    const inp = item.querySelector('.new-price-inp');
+    if (inp) { inp.value = orig; inp.classList.remove('unset'); }
+  });
+  toast('Prices reset to originals');
+});
+
+/* ══════════════════════════════════════════════
+   FILE SCAN
+══════════════════════════════════════════════ */
+const dropzone = $('scan-dropzone');
+const fileInp  = $('scan-file-inp');
+
+dropzone.addEventListener('click', () => fileInp.click());
+fileInp.addEventListener('change', () => {
+  if (fileInp.files[0]) processFile(fileInp.files[0]);
+  fileInp.value = '';
+});
+
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault(); dropzone.classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f) processFile(f);
+});
+
+function processFile(file) {
+  if (!S.cookie) { toast('Connect your account first', 'err'); return; }
+
+  const reader = new FileReader();
+  reader.onload = e => scanText(e.target.result, file.name).catch(err => toast(err.message, 'err'));
+  reader.onerror = () => toast('Could not read file', 'err');
+  reader.readAsText(file, 'utf-8');
+}
+
+async function scanText(text, filename) {
+  // Store raw file content so we can rewrite IDs after reupload
+  S.scanFileContent = text;
+  S.scanFilename    = filename;
+
+  // Roblox developer product IDs are 7–12 digits — filter out noise
+  const all = (text.match(/\b\d+\b/g) || []);
+  const candidates = [...new Set(all.filter(n => n.length >= 7 && n.length <= 12))];
+  if (!candidates.length) { renderScanResults([], filename); return; }
+
+  S.scanGame = null;
+
+  if (!S.cookie) {
+    toast('Connect your account first to scan product IDs', 'err');
+    return;
+  }
+
+  try {
+    loading('Scanning all IDs…', `Testing ${candidates.length} candidate IDs against Roblox API`);
+    const result = await api('/api/lookup-products', { cookie: S.cookie, ids: candidates });
+    hideLoading();
+
+    // Build a map of id → product from the lookup results
+    const productMap = {};
+    for (const p of (result.products || [])) {
+      productMap[p.id] = p;
+      S.origPrices[p.id] = p.price;
+      S.newPrices[p.id]  = p.price;
+    }
+    if (result.universeId) {
+      S.scanGame = { id: result.universeId, name: result.universeName || `Universe ${result.universeId}` };
+    }
+
+    // Only show IDs that resolved as actual developer products
+    const results = candidates.filter(id => productMap[id]).map(id => productMap[id]);
+    S.scanMatches = results;
+    renderScanResults(results, filename);
+  } catch (e) {
+    hideLoading();
+    toast(`Lookup failed: ${e.message}`, 'err');
+  }
+}
+
+function renderScanResults(products, filename = '') {
+  const el = $('scan-results');
+
+  if (!products.length) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="eicon"><i class="fa-solid fa-magnifying-glass"></i></div>
+      <h3>No IDs found</h3>
+      <p>No 6+ digit integers were found in this file.<br>
+         Make sure it's a valid .rbxmx / .rbxlx / .rbxl place or model file.</p>
+    </div>`;
+    return;
+  }
+
+  const matched  = products.filter(p => !p.unknown);
+  const unknown  = products.filter(p =>  p.unknown);
+  const gp = matched.filter(p => p.type === 'Game Pass').length;
+  const dp = matched.filter(p => p.type !== 'Game Pass').length;
+  const metaParts = [
+    matched.length && `${matched.length} matched (${[gp && `${gp} GP`, dp && `${dp} DP`].filter(Boolean).join(', ')})`,
+    unknown.length && `${unknown.length} unrecognised`,
+  ].filter(Boolean).join(' · ');
+
+  const unsetCount = matched.filter(p => (S.newPrices[p.id] ?? 0) === 0 && (S.origPrices[p.id] ?? 0) > 0).length;
+
+  const isCopy      = S.scanGame?.id && S.game?.id && String(S.scanGame.id) !== String(S.game.id);
+  const fromName    = S.scanGame?.name  || (S.scanGame?.id ? `Universe ${S.scanGame.id}` : null);
+  const toName      = S.game?.name      || (S.game?.id     ? `Universe ${S.game.id}`     : 'your game');
+
+  const routeBar = fromName
+    ? `<div class="scan-route-bar">
+        <span class="route-from"><i class="fa-solid fa-gamepad"></i> ${esc(fromName)}</span>
+        <i class="fa-solid fa-arrow-right" style="color:var(--muted);font-size:0.8rem"></i>
+        <span class="route-to"><i class="fa-solid fa-gamepad"></i> ${esc(toName)}</span>
+       </div>`
+    : '';
+
+  el.innerHTML = `
+    ${routeBar}
+    <div class="scan-summary-bar">
+      <span class="ss-count"><i class="fa-solid fa-check-circle"></i> ${products.length} product${products.length !== 1 ? 's' : ''} found</span>
+      <span class="ss-meta">${esc(metaParts)}${filename ? ` · ${esc(filename)}` : ''}</span>
+      ${unsetCount ? `<span class="ss-warn"><i class="fa-solid fa-triangle-exclamation"></i> ${unsetCount} price${unsetCount !== 1 ? 's' : ''} not set</span>` : ''}
+    </div>
+    <div class="prod-list" id="scan-prod-list">
+      ${products.map(p => p.unknown ? unknownRow(p) : prodRow(p, true)).join('')}
+    </div>
+    <div class="scan-upload-bar">
+      <button class="btn btn-purple" id="upload-scan-btn">
+        <i class="fa-solid fa-upload"></i>
+        ${isCopy ? `Reupload ${products.length} to ${esc(toName)}` : `Upload ${products.length} Product${products.length !== 1 ? 's' : ''}`}
+      </button>
+      <span class="price-unset-warn" id="scan-price-warn">
+        <i class="fa-solid fa-triangle-exclamation"></i> Some new prices are 0 — confirm?
+      </span>
+      <button class="btn btn-ghost btn-sm" id="scan-clear-btn" style="margin-left:auto">
+        <i class="fa-solid fa-xmark"></i> Clear
+      </button>
+    </div>`;
+
+  // Price / type input listener for scan pane
+  $('scan-prod-list').addEventListener('input', e => {
+    const el2 = e.target;
+    if (el2.classList.contains('new-price-inp') && el2.dataset.id) {
+      const val = Math.max(0, Math.round(parseFloat(el2.value) || 0));
+      S.newPrices[el2.dataset.id] = val;
+      el2.classList.toggle('unset', val === 0);
+      refreshScanWarn();
+    }
+    if (el2.classList.contains('type-sel') && el2.dataset.id) {
+      // Sync type change back into scanMatches and the DOM item
+      const match = S.scanMatches.find(p => p.id === el2.dataset.id);
+      if (match) match.type = el2.value;
+      const item = el2.closest('.prod-item');
+      if (item) item.dataset.type = el2.value;
+    }
+  });
+
+  $('upload-scan-btn').addEventListener('click', uploadScanResults);
+  $('scan-clear-btn').addEventListener('click', () => {
+    S.scanMatches     = [];
+    S.scanGame        = null;
+    S.scanFileContent = null;
+    S.scanFilename    = null;
+    el.innerHTML = '';
+  });
+
+  refreshScanWarn();
+}
+
+function refreshScanWarn() {
+  const warnEl = $('scan-price-warn');
+  if (!warnEl) return;
+  // Only warn for matched (known) products where original price > 0 but new price is 0
+  const hasZero = S.scanMatches.filter(p => !p.unknown)
+    .some(p => (S.newPrices[p.id] ?? 0) === 0 && (S.origPrices[p.id] ?? 0) > 0);
+  warnEl.style.display = hasZero ? 'inline-flex' : 'none';
+}
+
+function buildScanUpdates() {
+  const updates = [];
+  const list = $('scan-prod-list');
+  if (!list) return updates;
+  list.querySelectorAll('.prod-item').forEach(item => {
+    const id      = item.dataset.id;
+    const isUnknown = item.dataset.unknown === '1';
+    // type: from select (unknown items) or data-type attribute
+    const typeEl  = item.querySelector('.type-sel');
+    const type    = typeEl ? typeEl.value : item.dataset.type;
+    const name    = item.querySelector('[data-field="name"]')?.value || '';
+    const desc    = item.querySelector('[data-field="description"]')?.value || '';
+    const priceEl = item.querySelector('.new-price-inp');
+    const newP    = priceEl
+      ? Math.max(0, Math.round(parseFloat(priceEl.value) || 0))
+      : (S.newPrices[id] ?? S.origPrices[id] ?? 0);
+    updates.push({ id, type, name, description: desc, newPrice: newP, unknown: isUnknown });
+  });
+  return updates;
+}
+
+async function uploadScanResults() {
+  if (!S.game?.id) { toast('Select a game first', 'err'); return; }
+
+  const scanUid     = S.scanGame?.id;
+  const selectedUid = String(S.game.id);
+  const isCopy      = scanUid && scanUid !== selectedUid;
+
+  const updates = buildScanUpdates();
+  if (!updates.length) { toast('Nothing to upload', 'err'); return; }
+
+  const fromName = S.scanGame?.name || (S.scanGame?.id ? `Universe ${S.scanGame.id}` : 'scanned game');
+  const toName   = S.game?.name    || `Universe ${selectedUid}`;
+
+  // Different game → CREATE products in the user's selected game
+  if (isCopy) {
+    const btn = $('upload-scan-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Reuploading…';
+    loading(`Reuploading from ${fromName}…`, `Creating ${updates.length} products in ${toName}`);
+    try {
+      const products = updates.map(u => ({
+        id: u.id, name: u.name, description: u.description,
+        price: u.newPrice,
+      }));
+      const result = await api('/api/create-products', {
+        cookie: S.cookie, universeId: selectedUid, products,
+      });
+      hideLoading();
+      const ok   = result.success?.length || 0;
+      const fail = result.failed?.length  || 0;
+      const failDetail = fail && result.failed
+        ? result.failed.map(f => `<div><strong>${esc(f.name || f.id)}</strong>: ${esc(f.error)}</div>`).join('')
+        : '';
+
+      // Build modified file with old IDs swapped for new IDs and offer download
+      let downloadLine = '';
+      if (ok > 0 && S.scanFileContent) {
+        const idMap = {};
+        (result.success || []).forEach(item => {
+          if (item.originalId && item.newId) idMap[item.originalId] = item.newId;
+        });
+        if (Object.keys(idMap).length) {
+          let modified = S.scanFileContent;
+          let replaced = 0;
+          Object.entries(idMap).forEach(([oldId, newId]) => {
+            const re = new RegExp(`\\b${oldId}\\b`, 'g');
+            const before = modified;
+            modified = modified.replace(re, newId);
+            if (modified !== before) replaced++;
+          });
+          if (replaced > 0) {
+            const outName = (S.scanFilename || 'modified.rbxmx').replace(/(\.rbxm[xl]?)$/i, '_reuploaded$1');
+            const blob = new Blob([modified], { type: 'text/xml' });
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href = url; a.download = outName;
+            document.body.appendChild(a); a.click();
+            setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1500);
+            downloadLine = `<div style="margin-top:6px;font-size:0.8rem;color:var(--green)"><i class="fa-solid fa-download"></i> Downloaded <strong>${esc(outName)}</strong> with ${replaced} ID${replaced !== 1 ? 's' : ''} updated</div>`;
+            toast(`File downloaded: ${outName}`, 'ok');
+          }
+        }
+      }
+
+      const sumEl = $('upd-summary');
+      sumEl.innerHTML = `
+        <div class="sum-row">
+          <span class="sum-ok"><i class="fa-solid fa-check"></i> ${ok} reuploaded to ${esc(toName)}</span>
+          ${fail ? `<span class="sum-fail"><i class="fa-solid fa-xmark"></i> ${fail} failed</span>` : ''}
+        </div>
+        ${failDetail ? `<div class="sum-detail" style="display:block;margin-top:8px">${failDetail}</div>` : ''}
+        ${downloadLine}`;
+      sumEl.style.display = 'block';
+      toast(`${ok} product${ok !== 1 ? 's' : ''} created${fail ? `, ${fail} failed` : ''}`, ok > 0 ? 'ok' : 'err');
+    } catch (e) {
+      hideLoading();
+      toast(`Create failed: ${e.message}`, 'err');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<i class="fa-solid fa-upload"></i> Reupload ${updates.length} to ${esc(toName)}`;
+    }
+    return;
+  }
+
+  // Same game → UPDATE prices as before
+  const hasZero = S.scanMatches.some(p => (S.newPrices[p.id] ?? 0) === 0 && (S.origPrices[p.id] ?? 0) > 0);
+  if (hasZero && !confirm('Some products have a new price of 0 (free). Continue?')) return;
+  await doUpload(updates, 'scan-results', selectedUid);
+}
+
+/* ══════════════════════════════════════════════
+   UPLOAD CHANGES (all tabs)
+══════════════════════════════════════════════ */
+function buildUpdates(filterIds = null) {
+  const updates = [];
+  const panes = ['pane-passes', 'pane-devprods'];
+  panes.forEach(paneId => {
+    $(paneId).querySelectorAll('.prod-item').forEach(item => {
+      const id = item.dataset.id;
+      if (filterIds && !filterIds.has(id)) return;
+      const type = item.dataset.type;
+      const name = item.querySelector('[data-field="name"]')?.value || '';
+      const desc = item.querySelector('[data-field="description"]')?.value || '';
+      const newP = S.newPrices[id] ?? S.origPrices[id] ?? 0;
+      updates.push({ id, type, name, description: desc, newPrice: newP });
+    });
+  });
+  return updates;
+}
+
+async function doUpload(updates, summaryTarget = null, universeIdOverride = null) {
+  $('upload-btn').disabled = true;
+  $('upload-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Uploading…';
+
+  const scanBtn = $('upload-scan-btn');
+  if (scanBtn) { scanBtn.disabled = true; scanBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Uploading…'; }
+
+  $('upd-summary').style.display = 'none';
+  $('prod-err').style.display    = 'none';
+
+  loading('Uploading changes…', `Pushing ${updates.length} product updates to Roblox`);
+
+  try {
+    const result = await api('/api/update-prices', {
+      cookie: S.cookie, universeId: universeIdOverride || S.game.id, updates,
+    });
+
+    const ok   = result.success?.length || 0;
+    const fail = result.failed?.length  || 0;
+
+    const failDetail = fail && result.failed
+      ? result.failed.map(f => `<div><strong>${esc(f.id)}</strong>: ${esc(f.error)}</div>`).join('')
+      : '';
+
+    const sumEl = $('upd-summary');
+    sumEl.innerHTML = `
+      <div class="sum-row">
+        <span class="sum-ok"><i class="fa-solid fa-check"></i> ${ok} updated successfully</span>
+        ${fail ? `<span class="sum-fail"><i class="fa-solid fa-xmark"></i> ${fail} failed</span>` : ''}
+      </div>
+      ${failDetail ? `<div class="sum-detail" style="display:block;margin-top:8px">${failDetail}</div>` : ''}`;
+    sumEl.style.display = 'block';
+
+    // Update orig prices for successes
+    result.success?.forEach(id => {
+      const u = updates.find(x => x.id === id);
+      if (u) {
+        S.origPrices[id] = u.newPrice;
+        // Update orig-price display in all panes
+        document.querySelectorAll(`[data-orig="${id}"]`).forEach(el => {
+          el.textContent = `R$ ${u.newPrice}`;
+        });
+      }
+    });
+
+    toast(`Updated ${ok} product${ok !== 1 ? 's' : ''}${fail ? `, ${fail} failed` : ''}`, ok > 0 ? 'ok' : 'err');
+  } catch (e) {
+    $('prod-err').innerHTML = `<strong>Upload failed:</strong> ${esc(e.message)}`;
+    $('prod-err').style.display = 'block';
+    toast('Upload failed', 'err');
+  } finally {
+    $('upload-btn').disabled = false;
+    $('upload-btn').innerHTML = '<i class="fa-solid fa-upload"></i> Upload Changes';
+    if (scanBtn) { scanBtn.disabled = false; scanBtn.innerHTML = `<i class="fa-solid fa-upload"></i> Upload ${S.scanMatches.length} Matched Products`; }
+    hideLoading();
+  }
+}
+
+$('upload-btn').addEventListener('click', async () => {
+  const updates = buildUpdates();
+  if (!updates.length) { toast('Nothing to update', 'err'); return; }
+  await doUpload(updates);
+});
+
+/* ══════════════════════════════════════════════
+   BACK
+══════════════════════════════════════════════ */
+$('back-btn').addEventListener('click', () => {
+  S.game = null; S.products = null;
+  S.origPrices = {}; S.newPrices = {}; S.scanMatches = [];
+  S.scanFileContent = null; S.scanFilename = null;
+  showStep('picker');
+});
+
+/* ══════════════════════════════════════════════
+   PROFILE DRAWER
+══════════════════════════════════════════════ */
+function openDrawer() {
+  if (S.user) {
+    const av = $('drawer-avatar');
+    if (S.user.avatar) { av.src = S.user.avatar; av.style.display = ''; }
+    else av.style.display = 'none';
+    $('drawer-uname').textContent = S.user.displayName || S.user.name || '';
+  }
+  $('profile-drawer').classList.add('open');
+  $('drawer-overlay').classList.add('on');
+  renderDrawerStats();
+}
+
+function closeDrawer() {
+  $('profile-drawer').classList.remove('open');
+  $('drawer-overlay').classList.remove('on');
+}
+
+$('profile-btn').addEventListener('click', openDrawer);
+$('drawer-close').addEventListener('click', closeDrawer);
+$('drawer-overlay').addEventListener('click', closeDrawer);
+
+// Drawer tab switching
+document.querySelectorAll('.dtab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.dtab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const tab = btn.dataset.dtab;
+    ['stats', 'settings'].forEach(t => {
+      $('dtab-' + t).classList.toggle('active', t === tab);
+    });
+  });
+});
+
+function renderDrawerStats() {
+  const el = $('dtab-stats');
+  if (!S.games) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:0.85rem;padding:4px 0">Load games first to see stats.</p>';
+    return;
+  }
+
+  const myGames       = S.games.myGames || [];
+  const groups        = S.games.groups  || [];
+  // Aggregate totals across ALL accessible games (personal + every group)
+  const allGroupGames = groups.flatMap(g => g.games);
+  const allGames      = [...myGames, ...allGroupGames];
+  const totalVisits   = allGames.reduce((a, g) => a + (g.visits    || 0), 0);
+  const totalFavs     = allGames.reduce((a, g) => a + (g.favorites || 0), 0);
+  const totalPlaying  = allGames.reduce((a, g) => a + (g.playing   || 0), 0);
+  const totalGames    = allGames.length;
+
+  let html = `
+    <div class="drawer-stat-section">
+      <h4>Your Profile · ${totalGames} game${totalGames !== 1 ? 's' : ''}</h4>
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="sc-label"><i class="fa-solid fa-eye" style="color:var(--blue)"></i> Visits</div>
+          <div class="sc-val">${fmtNum(totalVisits)}</div>
+        </div>
+        <div class="stat-card">
+          <div class="sc-label"><i class="fa-solid fa-star" style="color:var(--yellow)"></i> Favorites</div>
+          <div class="sc-val">${fmtNum(totalFavs)}</div>
+        </div>
+        <div class="stat-card">
+          <div class="sc-label"><i class="fa-solid fa-circle" style="color:var(--green);font-size:0.5rem"></i> Playing</div>
+          <div class="sc-val">${fmtNum(totalPlaying)}</div>
+        </div>
+        <div class="stat-card">
+          <div class="sc-label"><i class="fa-solid fa-gamepad" style="color:var(--muted)"></i> Games</div>
+          <div class="sc-val">${totalGames}</div>
+        </div>
+      </div>
+    </div>`;
+
+  if (groups.length) {
+    html += `<div class="drawer-stat-section"><h4>Groups · ${groups.length}</h4>`;
+    groups.forEach(grp => {
+      html += `
+        <div class="drawer-group-stat">
+          <div class="dgs-header">
+            ${grp.icon ? `<img src="${esc(grp.icon)}" alt="">` : '<i class="fa-solid fa-users" style="color:var(--muted)"></i>'}
+            <strong>${esc(grp.name)}</strong>
+            <span class="dgs-role">${esc(grp.role)}</span>
+          </div>
+          <div class="dgs-stats">
+            <span><i class="fa-solid fa-gamepad"></i> ${grp.games.length} games</span>
+            <span><i class="fa-solid fa-eye"></i> ${fmtNum(grp.totalVisits || 0)}</span>
+            <span><i class="fa-solid fa-star"></i> ${fmtNum(grp.totalFavorites || 0)}</span>
+            <span><i class="fa-solid fa-circle" style="font-size:0.5rem;color:var(--green)"></i> ${fmtNum(grp.totalPlaying || 0)}</span>
+          </div>
+        </div>`;
+    });
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+}
+
+/* ══════════════════════════════════════════════
+   SETTINGS TOGGLES
+══════════════════════════════════════════════ */
+function initSettings() {
+  const toggles = [
+    { id: 'st-display-profile', key: 'displayMyProfile' },
+    { id: 'st-display-groups',  key: 'displayGroups'    },
+    { id: 'st-group-stats',     key: 'showGroupStats'   },
+  ];
+  toggles.forEach(({ id, key }) => {
+    const el = $(id);
+    if (!el) return;
+    el.checked = getSetting(key, true);
+    el.addEventListener('change', () => {
+      setSetting(key, el.checked);
+      if (S.games) renderPicker(S.games);
+    });
+  });
+}
+initSettings();
+
+/* ══════════════════════════════════════════════
+   TOGGLE GAME PRIVACY
+══════════════════════════════════════════════ */
+async function togglePrivacy(universeId, currentlyActive) {
+  const makePrivate = currentlyActive;
+  const card = $('game-browser')?.querySelector(`.game-card[data-id="${universeId}"]`);
+  const btn  = card?.querySelector('.lock-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; }
+  try {
+    const result = await api('/api/toggle-privacy', { cookie: S.cookie, universeId, makePrivate });
+    if (result.ok) {
+      const newActive = !currentlyActive;
+      if (card) card.dataset.active = String(newActive);
+      if (btn) {
+        btn.disabled  = false;
+        btn.className = `lock-btn ${newActive ? 'is-public' : 'is-private'}`;
+        btn.title     = newActive ? 'Make Private' : 'Make Public';
+        btn.innerHTML = `<i class="fa-solid ${newActive ? 'fa-lock-open' : 'fa-lock'}"></i> ${newActive ? 'Private' : 'Public'}`;
+      }
+      toast(`Game set to ${makePrivate ? 'Private' : 'Public'}`, 'ok');
+    } else {
+      if (btn) {
+        btn.disabled  = false;
+        btn.className = `lock-btn ${currentlyActive ? 'is-public' : 'is-private'}`;
+        btn.innerHTML = `<i class="fa-solid ${currentlyActive ? 'fa-lock-open' : 'fa-lock'}"></i> ${currentlyActive ? 'Private' : 'Public'}`;
+      }
+      toast(`Toggle failed: ${result.error || 'Unknown error'}`, 'err');
+    }
+  } catch (e) {
+    if (btn) {
+      btn.disabled  = false;
+      btn.className = `lock-btn ${currentlyActive ? 'is-public' : 'is-private'}`;
+      btn.innerHTML = `<i class="fa-solid ${currentlyActive ? 'fa-lock-open' : 'fa-lock'}"></i> ${currentlyActive ? 'Private' : 'Public'}`;
+    }
+    toast(`Toggle failed: ${e.message}`, 'err');
+  }
+}
+
+/* ══════════════════════════════════════════════
+   DEPLOY PANEL
+══════════════════════════════════════════════ */
+
+// Persist API key in localStorage
+const LS_API_KEY = 'rblx_mgr_apikey';
+(function initApiKey() {
+  const saved = localStorage.getItem(LS_API_KEY) || '';
+  if (saved) $('dp-api-key').value = saved;
+})();
+$('dp-api-key').addEventListener('input', () => {
+  localStorage.setItem(LS_API_KEY, $('dp-api-key').value.trim());
+});
+
+function getApiKey() { return $('dp-api-key').value.trim(); }
+
+function clearDeployPanel() {
+  S.deploy = { text: null, filename: null, base64: null };
+  const dz = $('dp-dz');
+  if (dz) {
+    dz.classList.remove('loaded', 'drag');
+    $('dp-dz-label').textContent = 'Drop a .rbxl / .rbxlx / .rbxmx file here, or click to browse';
+  }
+  $('deploy-panel')?.classList.remove('has-file');
+  $('dp-clear-btn').style.display  = 'none';
+  $('dp-deploy-btn').style.display = 'none';
+  $('deploy-status').innerHTML = '';
+}
+
+// Toggle open/close
+$('dp-toggle').addEventListener('click', () => {
+  $('deploy-panel').classList.toggle('open');
+});
+
+// File input
+$('dp-dz').addEventListener('click', () => $('dp-file-inp').click());
+$('dp-file-inp').addEventListener('change', () => {
+  if ($('dp-file-inp').files[0]) processDeployFile($('dp-file-inp').files[0]);
+  $('dp-file-inp').value = '';
+});
+$('dp-dz').addEventListener('dragover', e => { e.preventDefault(); $('dp-dz').classList.add('drag'); });
+$('dp-dz').addEventListener('dragleave', () => $('dp-dz').classList.remove('drag'));
+$('dp-dz').addEventListener('drop', e => {
+  e.preventDefault(); $('dp-dz').classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f) processDeployFile(f);
+});
+
+function processDeployFile(file) {
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const ab = ev.target.result;
+    // Decode as text for product ID scanning
+    S.deploy.text     = new TextDecoder('utf-8', { fatal: false }).decode(ab);
+    S.deploy.filename = file.name;
+    // Encode as base64 for binary-safe publishing
+    const bytes = new Uint8Array(ab);
+    let binary = '';
+    const CHUNK = 8192;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + CHUNK, bytes.length)));
+    }
+    S.deploy.base64 = btoa(binary);
+
+    $('dp-dz').classList.add('loaded');
+    $('dp-dz-label').textContent = `✓  ${file.name}`;
+    $('deploy-panel').classList.add('has-file', 'open');
+    $('dp-clear-btn').style.display = '';
+    // deploy button disabled for now
+    $('deploy-status').innerHTML = '';
+  };
+  reader.onerror = () => toast('Could not read file', 'err');
+  reader.readAsArrayBuffer(file);
+}
+
+$('dp-clear-btn').addEventListener('click', () => {
+  clearDeployPanel();
+});
+
+$('dp-deploy-btn').addEventListener('click', () => {
+  if (!S.deploy.base64) { toast('No file loaded', 'err'); return; }
+  if (!getApiKey()) { toast('Enter your Open Cloud API Key first', 'err'); $('dp-api-key').focus(); return; }
+  openDeployModal();
+});
+
+/* ══════════════════════════════════════════════
+   DEPLOY MODAL
+══════════════════════════════════════════════ */
+const dmThumbFiles = {};  // universeId → base64 string
+
+function openDeployModal() {
+  if (!S.games) { toast('Games not loaded yet', 'err'); return; }
+  dmThumbFiles.__keys = [];
+  const container = $('dm-games');
+  container.innerHTML = '';
+
+  // Build flat game list: personal games + group games
+  const sections = [];
+  if (S.games.myGames?.length) {
+    sections.push({ label: 'My Games', games: S.games.myGames.map(g => ({ ...g, groupName: null })) });
+  }
+  (S.games.groups || []).forEach(grp => {
+    if (grp.games?.length) {
+      sections.push({ label: grp.name, icon: grp.icon || null, games: grp.games.map(g => ({ ...g, groupName: grp.name })) });
+    }
+  });
+
+  if (!sections.length) {
+    container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted)">No games found.</div>';
+  } else {
+    sections.forEach(sec => {
+      const lbl = document.createElement('div');
+      lbl.className = 'dm-section-label';
+      if (sec.icon) {
+        lbl.innerHTML = `<img src="${esc(sec.icon)}" class="dm-sec-icon" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'"><span class="dm-sec-icon-ph" style="display:none"><i class="fa-solid fa-users"></i></span>${esc(sec.label)}`;
+      } else {
+        lbl.textContent = sec.label;
+      }
+      container.appendChild(lbl);
+      sec.games.forEach(g => container.appendChild(buildDmRow(g)));
+    });
+  }
+
+  updateDmFooter();
+  $('deploy-modal').style.display = '';
+  document.body.style.overflow = 'hidden';
+}
+
+function buildDmRow(g) {
+  const row = document.createElement('div');
+  row.className = 'dm-row';
+  row.dataset.id = g.id;
+  row.dataset.placeid = g.placeId || '';
+  row.dataset.name = g.name;
+
+  const iconSrc = g.icon || '';
+  const playing = g.playing || 0;
+  const visits  = g.visits  || 0;
+  const favs    = g.favorites || 0;
+  const subParts = [];
+  if (g.groupName) subParts.push(esc(g.groupName));
+  subParts.push(`ID: ${esc(g.id)}`);
+  const noPlaceId = !g.placeId;
+
+  row.innerHTML = `
+    <div class="dm-row-head">
+      <input type="checkbox" class="dm-chk" title="Select">
+      <div class="dm-icon-wrap">
+        ${iconSrc
+          ? `<img class="dm-row-icon" src="${esc(iconSrc)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'">`
+          : ''}
+        <div class="dm-icon-ph" style="${iconSrc ? 'display:none' : 'display:grid'}"><i class="fa-solid fa-gamepad"></i></div>
+      </div>
+      <div class="dm-row-info">
+        <div class="dm-row-name">${esc(g.name)}${noPlaceId ? ' <span style="color:var(--accent);font-size:0.7rem;font-weight:400">(no place ID)</span>' : ''}</div>
+        <div class="dm-row-sub">${subParts.join(' · ')}</div>
+        <div class="dm-row-stats">
+          <span><span class="sdot"></span>${fmtNum(playing)} playing</span>
+          <span>👁 ${fmtNum(visits)}</span>
+          <span>★ ${fmtNum(favs)}</span>
+        </div>
+      </div>
+      <button class="dm-expand" title="Edit thumbnail &amp; description"><i class="fa-solid fa-chevron-down"></i></button>
+    </div>
+    <div class="dm-row-details">
+      <div>
+        <div class="dm-detail-label">Thumbnail</div>
+        <div class="dm-thumb-row">
+          <img class="dm-thumb-preview" alt="">
+          <div class="dm-thumb-drop">
+            <i class="fa-solid fa-image"></i>
+            <span class="dm-thumb-label">Drop or click to upload a new thumbnail (optional)</span>
+          </div>
+          <input type="file" accept="image/*" style="display:none" class="dm-thumb-inp">
+        </div>
+      </div>
+      <div>
+        <div class="dm-detail-label">Description</div>
+        <textarea class="inp dm-desc" rows="3" placeholder="Leave blank to keep current description…" style="width:100%;resize:vertical;font-size:0.82rem"></textarea>
+      </div>
+    </div>`;
+
+  const chk      = row.querySelector('.dm-chk');
+  const expBtn   = row.querySelector('.dm-expand');
+  const details  = row.querySelector('.dm-row-details');
+  const thumbDrop = row.querySelector('.dm-thumb-drop');
+  const thumbInp  = row.querySelector('.dm-thumb-inp');
+  const thumbPrev = row.querySelector('.dm-thumb-preview');
+  const thumbLbl  = row.querySelector('.dm-thumb-label');
+
+  chk.addEventListener('change', () => {
+    row.classList.toggle('selected', chk.checked);
+    updateDmFooter();
+  });
+
+  expBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    row.classList.toggle('expanded');
+  });
+
+  row.querySelector('.dm-row-head').addEventListener('click', e => {
+    if (e.target === chk || e.target === expBtn || expBtn.contains(e.target)) return;
+    chk.checked = !chk.checked;
+    row.classList.toggle('selected', chk.checked);
+    updateDmFooter();
+  });
+
+  const loadThumb = file => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const b64 = ev.target.result.split(',')[1];
+      dmThumbFiles[g.id] = b64;
+      thumbPrev.src = ev.target.result;
+      thumbPrev.style.display = '';
+      thumbDrop.classList.add('loaded');
+      thumbLbl.textContent = file.name;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  thumbDrop.addEventListener('click', () => thumbInp.click());
+  thumbInp.addEventListener('change', () => { if (thumbInp.files[0]) loadThumb(thumbInp.files[0]); thumbInp.value=''; });
+  thumbDrop.addEventListener('dragover', e => { e.preventDefault(); thumbDrop.style.borderColor='var(--accent)'; });
+  thumbDrop.addEventListener('dragleave', () => { thumbDrop.style.borderColor=''; });
+  thumbDrop.addEventListener('drop', e => {
+    e.preventDefault(); thumbDrop.style.borderColor='';
+    if (e.dataTransfer.files[0]) loadThumb(e.dataTransfer.files[0]);
+  });
+
+  return row;
+}
+
+function updateDmFooter() {
+  const n = $('dm-games').querySelectorAll('.dm-chk:checked').length;
+  $('dm-count').textContent = n === 0 ? '0 games selected' : `${n} game${n !== 1 ? 's' : ''} selected`;
+  $('dm-pub-n').textContent = n;
+  $('dm-publish').disabled = n === 0;
+}
+
+function closeDeployModal() {
+  $('deploy-modal').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+$('dm-close').addEventListener('click', closeDeployModal);
+$('dm-cancel').addEventListener('click', closeDeployModal);
+$('dm-overlay').addEventListener('click', closeDeployModal);
+
+$('dm-publish').addEventListener('click', publishToSelectedGames);
+
+async function publishToSelectedGames() {
+  const apiKey = getApiKey();
+  const rows = [...$('dm-games').querySelectorAll('.dm-row')].filter(r => r.querySelector('.dm-chk')?.checked);
+  if (!rows.length) return;
+
+  const publishBtn = $('dm-publish');
+  publishBtn.disabled = true;
+  publishBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Publishing…';
+
+  const results = [];
+
+  for (const row of rows) {
+    const uId    = row.dataset.id;
+    const pId    = row.dataset.placeid;
+    const name   = row.dataset.name;
+    const desc   = row.querySelector('.dm-desc')?.value.trim() || '';
+    const thumbB64 = dmThumbFiles[uId] || null;
+    const entry  = { name, ok: false, steps: [] };
+    results.push(entry);
+
+    // Step 1: update description if provided
+    if (desc) {
+      try {
+        const r = await api('/api/update-game-info', { cookie: S.cookie, universeId: uId, description: desc });
+        entry.steps.push(r.ok ? '✓ Description updated' : `⚠ Desc: ${r.error}`);
+      } catch (e) { entry.steps.push(`⚠ Desc: ${e.message}`); }
+    }
+
+    // Step 2: upload thumbnail if provided
+    if (thumbB64) {
+      try {
+        const r = await api('/api/upload-thumbnail', { apiKey, universeId: uId, imageBase64: thumbB64 });
+        entry.steps.push(r.ok ? '✓ Thumbnail uploaded' : `⚠ Thumb: ${r.error}`);
+      } catch (e) { entry.steps.push(`⚠ Thumb: ${e.message}`); }
+    }
+
+    // Step 3: publish place file
+    if (!pId) {
+      entry.steps.push('✗ Publish failed: no Place ID (root place) found for this game');
+      continue;
+    }
+    try {
+      const r = await api('/api/publish-place', { apiKey, universeId: uId, placeId: pId, fileBase64: S.deploy.base64 });
+      if (r.ok) {
+        entry.ok = true;
+        entry.steps.push(`✓ Place published${r.version ? ` (v${r.version})` : ''}`);
+      } else {
+        entry.steps.push(`✗ Publish failed: ${r.error}`);
+      }
+    } catch (e) { entry.steps.push(`✗ Publish failed: ${e.message}`); }
+  }
+
+  closeDeployModal();
+
+  // Show results in deploy-status
+  const okCount = results.filter(r => r.ok).length;
+  const statusEl = $('deploy-status');
+  statusEl.innerHTML = results.map(r => `
+    <div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:0.82rem">
+      <strong style="color:${r.ok ? 'var(--green)' : 'var(--accent)'}">${r.ok ? '✓' : '✗'} ${esc(r.name)}</strong>
+      <div style="color:var(--muted);margin-top:2px">${r.steps.map(s => esc(s)).join(' · ')}</div>
+    </div>`).join('');
+
+  toast(`Published to ${okCount}/${results.length} game${results.length !== 1 ? 's' : ''}`, okCount === results.length ? 'ok' : 'err');
+  publishBtn.disabled = false;
+  publishBtn.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> Publish to <span id="dm-pub-n">0</span> games';
+}
+
+async function runDeploy(game) {
+  if (!S.deploy.text) return;
+
+  const copies   = Math.max(1, parseInt($('dp-amount').value) || 1);
+  const deployed = S.deploy.deployed || 0;
+  if (deployed >= copies) {
+    toast('All copies already deployed — clear to start again', 'err'); return;
+  }
+
+  const replaceIds = $('dp-replace-ids').checked;
+  const desc       = $('dp-desc').value.trim();
+  const statusEl   = $('deploy-status');
+
+  statusEl.innerHTML = `<div style="color:var(--muted);font-size:0.82rem;margin-top:10px"><i class="fa-solid fa-spinner fa-spin"></i> Scanning file for product IDs…</div>`;
+  loading(`Deploying to ${game.name}…`, 'Scanning file and creating products');
+
+  try {
+    // Step 1: scan candidates from file
+    const candidates = [...new Set(
+      (S.deploy.text.match(/\b\d+\b/g) || []).filter(n => n.length >= 7 && n.length <= 12)
+    )];
+    if (!candidates.length) {
+      hideLoading();
+      statusEl.innerHTML = '<div class="errbox" style="display:block;margin-top:10px">No product IDs found in this file.</div>';
+      return;
+    }
+
+    const lookup = await api('/api/lookup-products', { cookie: S.cookie, ids: candidates });
+    const products = lookup.products || [];
+    if (!products.length) {
+      hideLoading();
+      statusEl.innerHTML = '<div class="errbox" style="display:block;margin-top:10px">No recognised developer products found in this file.</div>';
+      return;
+    }
+
+    // Step 2: create products in target game
+    const result = await api('/api/create-products', {
+      cookie: S.cookie,
+      universeId: game.id,
+      products: products.map(p => ({
+        id:          p.id,
+        name:        p.name,
+        description: desc || p.description || '',
+        price:       p.price || 0,
+      })),
+    });
+    hideLoading();
+
+    const ok   = result.success?.length || 0;
+    const fail = result.failed?.length  || 0;
+
+    // Step 3: replace IDs and download
+    let downloadLine = '';
+    if (ok > 0 && replaceIds && S.deploy.text) {
+      const idMap = {};
+      (result.success || []).forEach(item => {
+        if (item.originalId && item.newId) idMap[item.originalId] = item.newId;
+      });
+      if (Object.keys(idMap).length) {
+        let modified = S.deploy.text;
+        let replaced = 0;
+        Object.entries(idMap).forEach(([old, nw]) => {
+          const re = new RegExp(`\\b${old}\\b`, 'g');
+          const before = modified;
+          modified = modified.replace(re, nw);
+          if (modified !== before) replaced++;
+        });
+        if (replaced > 0) {
+          const suffix  = deployed > 0 ? `_copy${deployed + 1}` : '_deployed';
+          const outName = (S.deploy.filename || 'game.rbxl').replace(/(\.rbxl[xl]?)$/i, `${suffix}$1`);
+          const blob = new Blob([modified], { type: 'text/xml' });
+          const url  = URL.createObjectURL(blob);
+          const a    = document.createElement('a');
+          a.href = url; a.download = outName;
+          document.body.appendChild(a); a.click();
+          setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1500);
+          downloadLine = `<div style="color:var(--green)"><i class="fa-solid fa-download"></i> Downloaded <strong>${esc(outName)}</strong> (${replaced} ID${replaced !== 1 ? 's' : ''} updated)</div>`;
+          toast(`Downloaded ${outName}`, 'ok');
+        }
+      }
+    }
+
+    // Track progress
+    S.deploy.deployed = (S.deploy.deployed || 0) + 1;
+    const nowDeployed = S.deploy.deployed;
+    const allDone     = nowDeployed >= copies;
+
+    // Build running log
+    const prev = statusEl.querySelector('.dp-log') || null;
+    const logHtml = (prev ? prev.innerHTML : '') +
+      `<div style="padding:4px 0;border-bottom:1px solid var(--border)">
+        <span style="color:var(--green);font-weight:700"><i class="fa-solid fa-check"></i> ${ok} product${ok !== 1 ? 's' : ''} → <strong>${esc(game.name)}</strong></span>
+        ${fail ? `<span style="color:var(--accent);margin-left:10px"><i class="fa-solid fa-xmark"></i> ${fail} failed</span>` : ''}
+        ${downloadLine}
+      </div>`;
+
+    statusEl.innerHTML = `<div class="dp-log" style="margin-top:10px;font-size:0.82rem">${logHtml}</div>`;
+
+    toast(`Deployed ${ok} product${ok !== 1 ? 's' : ''} to ${game.name}`, 'ok');
+  } catch (e) {
+    hideLoading();
+    statusEl.innerHTML += `<div class="errbox" style="display:block;margin-top:10px"><strong>Deploy failed:</strong> ${esc(e.message)}</div>`;
+    toast(`Deploy failed: ${e.message}`, 'err');
+  }
+}
+</script>
+
+<!-- ══ DEPLOY MODAL ══ -->
+<style>
+  #deploy-modal { position:fixed;inset:0;z-index:500;display:flex;align-items:center;justify-content:center; }
+  .dm-overlay { position:absolute;inset:0;background:rgba(0,0,0,0.78);backdrop-filter:blur(4px);cursor:pointer; }
+  .dm-panel {
+    position:relative;background:var(--surface);border:1px solid var(--border);
+    border-radius:14px;width:min(700px,95vw);max-height:82vh;
+    display:flex;flex-direction:column;z-index:1;overflow:hidden;
+  }
+  .dm-header {
+    display:flex;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border);gap:10px;flex-shrink:0;
+  }
+  .dm-header h3 { flex:1;font-size:1rem;margin:0; }
+  .dm-close-btn { background:none;border:none;color:var(--muted);cursor:pointer;font-size:1rem;padding:4px 8px;border-radius:6px; }
+  .dm-close-btn:hover { background:var(--surface2);color:var(--text); }
+  .dm-games { flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:5px; }
+  .dm-section-label {
+    display:flex;align-items:center;gap:6px;
+    font-size:0.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;
+    letter-spacing:0.06em;padding:10px 2px 4px;
+  }
+  .dm-sec-icon { width:18px;height:18px;border-radius:4px;object-fit:cover;flex-shrink:0; }
+  .dm-sec-icon-ph { width:18px;height:18px;border-radius:4px;background:var(--surface2);flex-shrink:0;place-items:center;font-size:0.65rem; }
+  .dm-row { border:1px solid var(--border);border-radius:10px;overflow:hidden;transition:border-color 0.15s; }
+  .dm-row.selected { border-color:var(--accent); }
+  .dm-row-head {
+    display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;
+    background:var(--surface2);user-select:none;
+  }
+  .dm-row-head:hover { background:var(--bg); }
+  .dm-icon-wrap { flex-shrink:0; width:40px;height:40px;border-radius:7px; }
+  .dm-row-icon { width:40px;height:40px;border-radius:7px;object-fit:cover;display:block; }
+  .dm-icon-ph { width:40px;height:40px;border-radius:7px;background:var(--surface);display:grid;place-items:center;color:var(--muted);font-size:1rem; }
+  .dm-row-info { flex:1;min-width:0; }
+  .dm-row-name { font-size:0.87rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+  .dm-row-sub { font-size:0.71rem;color:var(--muted); }
+  .dm-row-stats { display:flex;align-items:center;gap:8px;font-size:0.7rem;color:var(--muted);margin-top:2px;flex-wrap:wrap; }
+  .dm-row-stats .sdot { display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:2px;vertical-align:middle; }
+  .dm-chk { width:17px;height:17px;accent-color:var(--accent);cursor:pointer;flex-shrink:0; }
+  .dm-expand { background:none;border:none;color:var(--muted);cursor:pointer;padding:4px 6px;font-size:0.72rem;transition:transform 0.2s;flex-shrink:0; }
+  .dm-row.expanded .dm-expand { transform:rotate(180deg); }
+  .dm-row-details { display:none;flex-direction:column;gap:10px;padding:12px 14px;border-top:1px solid var(--border);background:var(--bg); }
+  .dm-row.expanded .dm-row-details { display:flex; }
+  .dm-detail-label { font-size:0.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px; }
+  .dm-thumb-row { display:flex;align-items:center;gap:10px; }
+  .dm-thumb-preview { width:52px;height:52px;border-radius:8px;object-fit:cover;border:1px solid var(--border);display:none;flex-shrink:0; }
+  .dm-thumb-drop {
+    flex:1;border:2px dashed var(--border);border-radius:8px;padding:10px 14px;
+    cursor:pointer;font-size:0.8rem;color:var(--muted);display:flex;align-items:center;gap:8px;transition:border-color 0.2s;
+  }
+  .dm-thumb-drop:hover { border-color:var(--accent);color:var(--accent); }
+  .dm-thumb-drop.loaded { border-color:var(--green);border-style:solid;color:var(--green); }
+  .dm-footer {
+    padding:13px 18px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0;
+  }
+  .dm-count { flex:1;font-size:0.83rem;color:var(--muted); }
+</style>
+<div id="deploy-modal" style="display:none">
+  <div class="dm-overlay" id="dm-overlay"></div>
+  <div class="dm-panel">
+    <div class="dm-header">
+      <h3><i class="fa-solid fa-rocket" style="color:var(--accent);margin-right:7px"></i>Select Games to Deploy</h3>
+      <button class="dm-close-btn" id="dm-close"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="dm-games" id="dm-games"></div>
+    <div class="dm-footer">
+      <span class="dm-count" id="dm-count">0 games selected</span>
+      <button class="btn btn-ghost btn-sm" id="dm-cancel">Cancel</button>
+      <button class="btn btn-primary" id="dm-publish" disabled>
+        <i class="fa-solid fa-cloud-arrow-up"></i> Publish to <span id="dm-pub-n">0</span> games
+      </button>
+    </div>
+  </div>
+</div>
+</body>
+</html>
