@@ -408,23 +408,30 @@ async function fetchGameProducts(candidateId, cookie) {
   const errors = [];
 
   // ── Developer Products ──────────────────────────────────────────────────────
-  // Try develop.roblox.com v1 first; fall back to apis.roblox.com if 404
+  // Try develop.roblox.com v1 first (paginated); fall back to apis.roblox.com if 404
   let dpFetched = false;
   try {
-    const r = await robloxReq({
-      hostname: 'develop.roblox.com',
-      path: `/v1/universes/${universeId}/developer-products?productName=&limit=500&sortOrder=Asc`,
-      cookie,
-    });
-    console.log(`[dev-products] develop.v1 status=${r.status} body=${r.body.slice(0, 200)}`);
-    if (r.status === 200) {
-      devProducts = JSON.parse(r.body).developerProducts || [];
-      dpFetched = true;
-    } else if (r.status === 401 || r.status === 403) {
-      errors.push(`Developer Products: No creator access (HTTP ${r.status}).`);
-      dpFetched = true; // don't retry
-    }
-    // 404 → fall through to new endpoint
+    let cursor = null;
+    do {
+      if (cursor) await sleep(300);
+      const r = await robloxReq({
+        hostname: 'develop.roblox.com',
+        path: `/v1/universes/${universeId}/developer-products?productName=&limit=500&sortOrder=Asc${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
+        cookie,
+      });
+      console.log(`[dev-products] develop.v1 status=${r.status} body=${r.body.slice(0, 200)}`);
+      if (r.status === 200) {
+        const data = JSON.parse(r.body);
+        devProducts = devProducts.concat(data.developerProducts || []);
+        cursor = data.nextPageCursor || null;
+        dpFetched = true;
+      } else if (r.status === 401 || r.status === 403) {
+        errors.push(`Developer Products: No creator access (HTTP ${r.status}).`);
+        dpFetched = true; break; // don't retry
+      } else {
+        break; // 404 → fall through to new endpoint
+      }
+    } while (cursor);
   } catch (e) {
     errors.push(`Developer Products error: ${e.message}`);
     dpFetched = true;
