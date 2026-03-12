@@ -836,6 +836,7 @@ const S = {
   scanGame:      null,
   scanFileContent: null,
   scanFilename:    null,
+  scanFileIsBinary: false,
 
 };
 
@@ -1370,6 +1371,62 @@ $('reset-btn').addEventListener('click', () => {
 });
 
 /* ══════════════════════════════════════════════
+   RBXL BINARY PARSER (LZ4 decompression)
+══════════════════════════════════════════════ */
+function lz4BlockDecode(src, uncompSize) {
+  const out = new Uint8Array(uncompSize);
+  let ip = 0, op = 0;
+  while (ip < src.length && op < uncompSize) {
+    const token = src[ip++];
+    let litLen = (token >> 4) & 0xF;
+    if (litLen === 15) { let b; do { b = src[ip++]; litLen += b; } while (b === 255); }
+    for (let i = 0; i < litLen; i++) out[op++] = src[ip++];
+    if (ip >= src.length || op >= uncompSize) break;
+    const offset = src[ip] | (src[ip + 1] << 8);
+    ip += 2;
+    let matchLen = (token & 0xF) + 4;
+    if ((token & 0xF) === 15) { let b; do { b = src[ip++]; matchLen += b; } while (b === 255); }
+    let mp = op - offset;
+    for (let i = 0; i < matchLen; i++) out[op++] = out[mp++];
+  }
+  return out;
+}
+
+function parseRbxlBinary(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const view  = new DataView(buffer);
+  const magic = String.fromCharCode(...bytes.slice(0, 7));
+  if (magic !== '<roblox') throw new Error('Not a valid RBXL file');
+
+  // Header: 14-byte signature + 2 version + 4 numTypes + 4 numInstances + 8 reserved = 32
+  let pos = 32;
+  const textParts = [];
+  const decoder = new TextDecoder('utf-8', { fatal: false });
+
+  while (pos + 16 <= bytes.length) {
+    const chunkName = String.fromCharCode(bytes[pos], bytes[pos+1], bytes[pos+2], bytes[pos+3]);
+    const compSize   = view.getUint32(pos + 4, true);
+    const uncompSize = view.getUint32(pos + 8, true);
+    pos += 16;
+
+    if (chunkName === 'END\0' || chunkName === 'END') break;
+
+    let chunkData;
+    if (compSize === 0) {
+      chunkData = bytes.slice(pos, pos + uncompSize);
+      pos += uncompSize;
+    } else {
+      try {
+        chunkData = lz4BlockDecode(bytes.slice(pos, pos + compSize), uncompSize);
+      } catch (_) { pos += compSize; continue; }
+      pos += compSize;
+    }
+    textParts.push(decoder.decode(chunkData));
+  }
+  return textParts.join('\n');
+}
+
+/* ══════════════════════════════════════════════
    FILE SCAN
 ══════════════════════════════════════════════ */
 const dropzone = $('scan-dropzone');
@@ -1392,10 +1449,44 @@ dropzone.addEventListener('drop', e => {
 function processFile(file) {
   if (!S.cookie) { toast('Connect your account first', 'err'); return; }
 
-  const reader = new FileReader();
-  reader.onload = e => scanText(e.target.result, file.name).catch(err => toast(err.message, 'err'));
-  reader.onerror = () => toast('Could not read file', 'err');
-  reader.readAsText(file, 'utf-8');
+  const ext = file.name.toLowerCase().split('.').pop();
+  if (ext === 'rbxl') {
+    // RBXL is binary — send to server for proper parsing with rbx-reader
+    const reader = new FileReader();
+    reader.onload = async e => {
+      try {
+        loading('Parsing RBXL…', 'Extracting scripts from binary place file');
+        // Encode ArrayBuffer as base64 in chunks to avoid stack overflow on large files
+        const bytes = new Uint8Array(e.target.result);
+        let binary = '';
+        const BCHUNK = 0x8000;
+        for (let i = 0; i < bytes.length; i += BCHUNK) {
+          binary += String.fromCharCode.apply(null, bytes.subarray(i, i + BCHUNK));
+        }
+        const fileBase64 = btoa(binary);
+        const result = await api('/api/parse-rbxl', { fileBase64 });
+        hideLoading();
+        if (!result.text || !result.text.trim()) {
+          toast('No script source found in RBXL file', 'err'); return;
+        }
+        toast(`Extracted ${result.scriptCount ?? '?'} script(s) from RBXL`);
+        S.scanFileIsBinary = true;
+        scanText(result.text, file.name).catch(err => toast(err.message, 'err'));
+      } catch (err) {
+        hideLoading();
+        toast(`Could not parse RBXL: ${err.message}`, 'err');
+      }
+    };
+    reader.onerror = () => toast('Could not read file', 'err');
+    reader.readAsArrayBuffer(file);
+  } else {
+    // RBXMX, RBXLX, XML — plain text
+    S.scanFileIsBinary = false;
+    const reader = new FileReader();
+    reader.onload = e => scanText(e.target.result, file.name).catch(err => toast(err.message, 'err'));
+    reader.onerror = () => toast('Could not read file', 'err');
+    reader.readAsText(file, 'utf-8');
+  }
 }
 
 async function scanText(text, filename) {
@@ -1403,9 +1494,9 @@ async function scanText(text, filename) {
   S.scanFileContent = text;
   S.scanFilename    = filename;
 
-  // Roblox developer product IDs are 7–12 digits — filter out noise
+  // Roblox product IDs are 6+ digits — check every candidate
   const all = (text.match(/\b\d+\b/g) || []);
-  const candidates = [...new Set(all.filter(n => n.length >= 7 && n.length <= 12))];
+  const candidates = [...new Set(all.filter(n => n.length >= 6 && n.length <= 12))];
   if (!candidates.length) { renderScanResults([], filename); return; }
 
   S.scanGame = null;
@@ -1416,22 +1507,43 @@ async function scanText(text, filename) {
   }
 
   try {
-    loading('Scanning all IDs…', `Testing ${candidates.length} candidate IDs against Roblox API`);
-    const result = await api('/api/lookup-products', { cookie: S.cookie, ids: candidates });
+    // Break into batches of 100 to stay within Roblox's per-window rate limit
+    const SCAN_BATCH = 100;
+    const totalBatches = Math.ceil(candidates.length / SCAN_BATCH);
+    const allProducts = [];
+    let scanUniverseId = null, scanUniverseName = null;
+
+    for (let b = 0; b < totalBatches; b++) {
+      const batch = candidates.slice(b * SCAN_BATCH, (b + 1) * SCAN_BATCH);
+      loading(
+        'Scanning all IDs…',
+        totalBatches > 1
+          ? `Batch ${b + 1} / ${totalBatches} · ${batch.length} IDs`
+          : `Testing ${batch.length} candidate IDs against Roblox API`
+      );
+      const result = await api('/api/lookup-products', { cookie: S.cookie, ids: batch });
+      for (const p of (result.products || [])) allProducts.push(p);
+      if (!scanUniverseId && result.universeId) {
+        scanUniverseId   = result.universeId;
+        scanUniverseName = result.universeName;
+      }
+      // Small pause between batches so we don't slam the rate limit
+      if (b < totalBatches - 1) await new Promise(r => setTimeout(r, 500));
+    }
+
     hideLoading();
 
-    // Build a map of id → product from the lookup results
+    // Build a map of id → product from all batch results
     const productMap = {};
-    for (const p of (result.products || [])) {
+    for (const p of allProducts) {
       productMap[p.id] = p;
       S.origPrices[p.id] = p.price;
       S.newPrices[p.id]  = p.price;
     }
-    if (result.universeId) {
-      S.scanGame = { id: result.universeId, name: result.universeName || `Universe ${result.universeId}` };
+    if (scanUniverseId) {
+      S.scanGame = { id: scanUniverseId, name: scanUniverseName || `Universe ${scanUniverseId}` };
     }
 
-    // Only show IDs that resolved as actual developer products
     const results = candidates.filter(id => productMap[id]).map(id => productMap[id]);
     S.scanMatches = results;
     renderScanResults(results, filename);
@@ -1520,10 +1632,11 @@ function renderScanResults(products, filename = '') {
 
   $('upload-scan-btn').addEventListener('click', uploadScanResults);
   $('scan-clear-btn').addEventListener('click', () => {
-    S.scanMatches     = [];
-    S.scanGame        = null;
-    S.scanFileContent = null;
-    S.scanFilename    = null;
+    S.scanMatches      = [];
+    S.scanGame         = null;
+    S.scanFileContent  = null;
+    S.scanFilename     = null;
+    S.scanFileIsBinary = false;
     el.innerHTML = '';
   });
 
@@ -1595,8 +1708,9 @@ async function uploadScanResults() {
         : '';
 
       // Build modified file with old IDs swapped for new IDs and offer download
+      // (only for text-based files — RBXL binary rewrite is not supported)
       let downloadLine = '';
-      if (ok > 0 && S.scanFileContent) {
+      if (ok > 0 && S.scanFileContent && !S.scanFileIsBinary) {
         const idMap = {};
         (result.success || []).forEach(item => {
           if (item.originalId && item.newId) idMap[item.originalId] = item.newId;

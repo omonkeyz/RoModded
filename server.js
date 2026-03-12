@@ -3,6 +3,8 @@ const http  = require('http');
 const https = require('https');
 const fs    = require('fs');
 const path  = require('path');
+let rbxReader = null;
+try { rbxReader = require('rbx-reader'); } catch { /* optional — needed only for /api/parse-rbxl */ }
 
 const PORT  = process.env.PORT || 5200;
 const CHUNK = 100;
@@ -441,15 +443,16 @@ async function fetchGameProducts(candidateId, cookie) {
     // New endpoint used by Roblox Creator Hub for newer games
     try {
       let pageToken = null;
+      // Pass 1: sortOrder=Asc (oldest first)
       do {
         if (pageToken) await sleep(300);
         const p = `/developer-products/v2/universes/${universeId}/developer-products/creator?pageSize=100${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
         const r = await robloxReq({ hostname: 'apis.roblox.com', path: p, cookie });
-        console.log(`[dev-products] apis.v2 status=${r.status} body=${r.body.slice(0, 200)}`);
         if (r.status === 200) {
           const data = JSON.parse(r.body);
           devProducts = devProducts.concat(data.developerProducts || []);
           pageToken = data.nextPageToken || null;
+          console.log(`[dev-products] apis.v2 ASC status=${r.status} count=${(data.developerProducts||[]).length} total=${devProducts.length} nextPageToken=${pageToken}`);
         } else if (r.status === 401 || r.status === 403) {
           errors.push(`Developer Products: No creator access (HTTP ${r.status}).`);
           break;
@@ -458,6 +461,26 @@ async function fetchGameProducts(candidateId, cookie) {
           break;
         }
       } while (pageToken);
+
+      // Pass 2: sortOrder=Desc (newest first) — catches products beyond the first 100
+      // when the API returns no nextPageToken despite more existing
+      if (devProducts.length > 0 && !pageToken) {
+        try {
+          await sleep(300);
+          const p2 = `/developer-products/v2/universes/${universeId}/developer-products/creator?pageSize=100&sortOrder=Desc`;
+          const r2 = await robloxReq({ hostname: 'apis.roblox.com', path: p2, cookie });
+          if (r2.status === 200) {
+            const data2 = JSON.parse(r2.body);
+            const seen = new Set(devProducts.map(dp => String(dp.productId || dp.id)));
+            let added = 0;
+            for (const dp of (data2.developerProducts || [])) {
+              const id = String(dp.productId || dp.id);
+              if (!seen.has(id)) { devProducts.push(dp); seen.add(id); added++; }
+            }
+            console.log(`[dev-products] apis.v2 DESC added=${added} total=${devProducts.length}`);
+          }
+        } catch (e) { /* ignore DESC failure */ }
+      }
     } catch (e) {
       errors.push(`Developer Products error: ${e.message}`);
     }
@@ -536,7 +559,7 @@ async function updatePrices(universeId, updates, cookie) {
       let pageToken = null;
       do {
         if (pageToken) await sleep(300);
-        const p = `/developer-products/v2/universes/${universeId}/developer-products/creator?pageSize=100${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
+        const p = `/developer-products/v2/universes/${universeId}/developer-products/creator?pageSize=500${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
         const r = await robloxReq({ hostname: 'apis.roblox.com', path: p, cookie });
         if (r.status === 200) {
           const data = JSON.parse(r.body);
@@ -753,12 +776,14 @@ http.createServer(async (req, res) => {
       }
 
       const cleanIds = [...new Set(ids.map(x => String(x).replace(/\D/g, '')).filter(Boolean))];
-      const CONCURRENCY = 20;
+      const CONCURRENCY = 5;
       const products = [];
 
+      // Check each ID against both developer-products AND game-passes APIs
       for (let i = 0; i < cleanIds.length; i += CONCURRENCY) {
         const batch = cleanIds.slice(i, i + CONCURRENCY);
         const results = await Promise.all(batch.map(async id => {
+          // Try developer product first
           try {
             const r = await robloxReq({
               hostname: 'apis.roblox.com',
@@ -777,12 +802,34 @@ http.createServer(async (req, res) => {
               };
             }
           } catch (e) {
-            console.log(`[lookup-products] id=${id} error: ${e.message}`);
+            console.log(`[lookup-products] devprod id=${id} error: ${e.message}`);
+          }
+          // Try game pass via itemconfiguration (the correct individual-lookup endpoint)
+          try {
+            const r = await robloxReq({
+              hostname: 'itemconfiguration.roblox.com',
+              path: `/v1/game-passes/${id}`,
+              cookie: cookie.trim(),
+            });
+            if (r.status === 200) {
+              const d = JSON.parse(r.body);
+              return {
+                id:          String(d.id || id),
+                name:        d.name || d.displayName || '',
+                description: d.description || '',
+                price:       typeof d.price === 'number' ? d.price
+                           : typeof d.priceInRobux === 'number' ? d.priceInRobux : null,
+                universeId:  d.universeId ? String(d.universeId) : null,
+                type:        'Game Pass',
+              };
+            }
+          } catch (e) {
+            console.log(`[lookup-products] gamepass id=${id} error: ${e.message}`);
           }
           return null;
         }));
         results.forEach(p => { if (p) products.push(p); });
-        if (i + CONCURRENCY < cleanIds.length) await sleep(60);
+        if (i + CONCURRENCY < cleanIds.length) await sleep(200);
       }
 
       console.log(`[lookup-products] checked ${cleanIds.length} IDs, found ${products.length} products`);
@@ -1112,6 +1159,39 @@ http.createServer(async (req, res) => {
         send(res, 200, { ok: true, universeId: String(universeId), placeId });
       } else {
         send(res, 200, { ok: false, error: `HTTP ${r.status} — ${r.body.slice(0,300)}` });
+      }
+      return;
+    }
+
+    if (method === 'POST' && pathname === '/api/parse-rbxl') {
+      if (!rbxReader) { send(res, 500, { error: 'rbx-reader module not available' }); return; }
+      const { fileBase64 } = await parseBody(req);
+      if (!fileBase64) { send(res, 400, { error: 'fileBase64 required' }); return; }
+
+      try {
+        const buf = Buffer.from(fileBase64, 'base64');
+        // Convert Node Buffer to a proper ArrayBuffer slice (Buffer.buffer may be shared/larger)
+        const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+        const parsed = rbxReader.parseBuffer(ab);
+
+        const SCRIPT_CLASSES = new Set(['Script', 'LocalScript', 'ModuleScript']);
+        const parts = [];
+
+        // result.instances is the flat list of all instances in the file
+        for (const inst of (parsed.instances || [])) {
+          if (!SCRIPT_CLASSES.has(inst.ClassName)) continue;
+          // getProperty returns the raw property value; try both casings
+          const src = inst.getProperty ? inst.getProperty('Source') : null;
+          if (src && typeof src === 'string' && src.trim().length > 0) {
+            parts.push(src);
+          }
+        }
+
+        console.log(`[parse-rbxl] parsed OK — ${(parsed.instances||[]).length} instances, ${parts.length} scripts`);
+        send(res, 200, { text: parts.join('\n\n'), scriptCount: parts.length });
+      } catch (e) {
+        console.error('[parse-rbxl] error:', e.message);
+        send(res, 500, { error: `Parse failed: ${e.message}` });
       }
       return;
     }
