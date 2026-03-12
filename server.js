@@ -3,8 +3,200 @@ const http  = require('http');
 const https = require('https');
 const fs    = require('fs');
 const path  = require('path');
-let rbxReader = null;
-try { rbxReader = require('rbx-reader'); } catch { /* optional — needed only for /api/parse-rbxl */ }
+let fzstd = null;
+try { fzstd = require('fzstd'); } catch { /* ZStd decompression — optional */ }
+let zstdEnc = null;
+try { zstdEnc = require('@mongodb-js/zstd'); } catch { /* ZStd compression — optional */ }
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  RBXL BINARY PARSER  (custom — handles both LZ4 and ZStandard chunks)
+//  Roblox binary format: 32-byte header, then chunks of:
+//    [4-byte name][uint32 compSize][uint32 uncompSize][4 reserved][data]
+//  String properties (data type 0x01) are length-prefixed: [uint32 len][bytes]
+//  Newer RBXL files use ZStd (magic 0x28 0xB5 0x2F 0xFD); older ones use LZ4
+// ══════════════════════════════════════════════════════════════════════════════
+
+// RBXL binary magic: <roblox!\x89\xFF\r\n\x1a\n\x00\x00  (16 bytes)
+const RBXL_MAGIC = Buffer.from([0x3C,0x72,0x6F,0x62,0x6C,0x6F,0x78,0x21,0x89,0xFF,0x0D,0x0A,0x1A,0x0A,0x00,0x00]);
+
+function isRbxlBinary(buf) {
+  if (buf.length < 16) return false;
+  return buf.slice(0, 8).toString('ascii') === '<roblox!';
+}
+
+// Lenient LZ4 block decompressor — does NOT throw on trailing bytes
+function lz4BlockDecompress(src, uncompSize) {
+  const out = Buffer.alloc(uncompSize);
+  let ip = 0, op = 0;
+  while (ip < src.length && op < uncompSize) {
+    const token = src[ip++];
+    // Literal length
+    let litLen = token >>> 4;
+    if (litLen === 15) {
+      let b; do { if (ip >= src.length) break; b = src[ip++]; litLen += b; } while (b === 255);
+    }
+    // Copy literals (clamped)
+    const lCopy = Math.min(litLen, src.length - ip, uncompSize - op);
+    src.copy(out, op, ip, ip + lCopy);
+    op += lCopy; ip += lCopy;
+    if (lCopy < litLen || ip >= src.length || op >= uncompSize) break;
+    // Match offset
+    if (ip + 2 > src.length) break;
+    const offset = src[ip] | (src[ip + 1] << 8);
+    ip += 2;
+    if (offset === 0) break;
+    // Match length
+    let matchLen = (token & 0xF) + 4;
+    if ((token & 0xF) === 15) {
+      let b; do { if (ip >= src.length) break; b = src[ip++]; matchLen += b; } while (b === 255);
+    }
+    // Copy match (handles overlapping)
+    let mp = op - offset;
+    if (mp < 0) break;
+    const mCopy = Math.min(matchLen, uncompSize - op);
+    for (let i = 0; i < mCopy; i++) out[op++] = out[mp++];
+  }
+  return out; // may be shorter than uncompSize if stream ended early — that's OK
+}
+
+// ZStd magic: 0x28 0xB5 0x2F 0xFD (little-endian frame magic)
+const ZSTD_MAGIC = Buffer.from([0x28, 0xB5, 0x2F, 0xFD]);
+
+// Decompress one RBXL chunk; auto-detects ZStd vs LZ4; returns Buffer (decompressed)
+function rbxlDecompressChunk(compData, compSize, uncompSize) {
+  if (compSize === 0) return compData.slice(0, uncompSize);
+  const src = compData.slice(0, compSize);
+  // Detect ZStandard (newer Roblox files)
+  if (src.length >= 4 && src.slice(0, 4).equals(ZSTD_MAGIC)) {
+    if (fzstd) {
+      try {
+        const result = fzstd.decompress(src);
+        return Buffer.from(result);
+      } catch (e) {
+        console.warn('[rbxl] zstd decompress failed:', e.message);
+        return src; // fallback: raw bytes
+      }
+    }
+    console.warn('[rbxl] ZStd chunk encountered but fzstd not loaded');
+    return src;
+  }
+  // Legacy LZ4 block
+  try {
+    return lz4BlockDecompress(src, uncompSize);
+  } catch {
+    return src; // fallback: raw bytes
+  }
+}
+
+// Extract all printable-ASCII text runs (>= minLen chars) from a Buffer
+function extractTextRuns(buf, minLen = 10) {
+  const parts = [];
+  let start = -1, len = 0;
+  for (let i = 0; i < buf.length; i++) {
+    const b = buf[i];
+    const ok = (b >= 0x09 && b <= 0x0D) || (b >= 0x20 && b <= 0x7E);
+    if (ok) { if (start < 0) start = i; len++; }
+    else { if (len >= minLen) parts.push(buf.slice(start, start + len).toString('ascii')); start = -1; len = 0; }
+  }
+  if (len >= minLen) parts.push(buf.slice(start, start + len).toString('ascii'));
+  return parts;
+}
+
+// Iterate RBXL chunks; cb(name, data) called for each (data = decompressed Buffer)
+function rbxlForEachChunk(buf, cb) {
+  if (!isRbxlBinary(buf)) throw new Error('Not a valid RBXL binary file');
+  let pos = 32; // skip 32-byte header
+  while (pos + 16 <= buf.length) {
+    const name     = buf.slice(pos, pos + 4).toString('ascii').replace(/\0/g, '');
+    const compSize = buf.readUInt32LE(pos + 4);
+    const uncompSize = buf.readUInt32LE(pos + 8);
+    pos += 16;
+    if (name === 'END') { cb('END', Buffer.alloc(0)); break; }
+    const dataSize = compSize || uncompSize;
+    if (pos + dataSize > buf.length) break;
+    const raw  = buf.slice(pos, pos + dataSize);
+    const data = rbxlDecompressChunk(raw, compSize, uncompSize);
+    pos += dataSize;
+    cb(name, data);
+  }
+}
+
+// Parse & extract all text from an RBXL binary buffer
+function rbxlExtractText(buf) {
+  const parts = [];
+  rbxlForEachChunk(buf, (name, data) => {
+    if (name === 'END' || name === 'PRNT' || name === 'META') return;
+    extractTextRuns(data, 10).forEach(t => parts.push(t));
+  });
+  return parts.join('\n');
+}
+
+// Modify PROP chunk: replace IDs in all String (type 0x01) property values
+// Returns new chunk Buffer with corrected string lengths
+function rbxlModifyPropChunk(data, idMap) {
+  if (data.length < 9) return data;
+  const nameLen   = data.readUInt32LE(4);
+  const hdrEnd    = 8 + nameLen;
+  if (hdrEnd >= data.length) return data;
+  const dataType  = data[hdrEnd];
+  if (dataType !== 0x01) return data; // not String type — leave untouched
+
+  const header = data.slice(0, hdrEnd + 1);
+  const parts  = [header];
+  let pos = hdrEnd + 1;
+  while (pos + 4 <= data.length) {
+    const strLen = data.readUInt32LE(pos);
+    if (pos + 4 + strLen > data.length) { parts.push(data.slice(pos)); break; }
+    let str = data.slice(pos + 4, pos + 4 + strLen).toString('latin1');
+    for (const [oldId, newId] of Object.entries(idMap)) {
+      str = str.replace(new RegExp(`(?<![0-9])${oldId}(?![0-9])`, 'g'), newId);
+    }
+    const newStrBuf = Buffer.from(str, 'latin1');
+    const lenBuf = Buffer.alloc(4);
+    lenBuf.writeUInt32LE(newStrBuf.length, 0);
+    parts.push(lenBuf, newStrBuf);
+    pos += 4 + strLen;
+  }
+  return Buffer.concat(parts);
+}
+
+// Build a modified RBXL binary with IDs replaced; returns new Buffer (async for ZStd)
+async function rbxlModify(buf, idMap) {
+  if (!Object.keys(idMap).length) return buf;
+  const header   = buf.slice(0, 32);
+  const outParts = [header];
+  const chunkQueue = [];
+
+  rbxlForEachChunk(buf, (name, data) => {
+    if (name === 'END') { chunkQueue.push({ name: 'END', data }); return; }
+    if (name === 'PROP') data = rbxlModifyPropChunk(data, idMap);
+    chunkQueue.push({ name, data });
+  });
+
+  for (const { name, data } of chunkQueue) {
+    if (name === 'END') {
+      const endHdr = Buffer.alloc(16); endHdr.write('END\0', 0, 'ascii');
+      outParts.push(endHdr); break;
+    }
+    let compData = null;
+    // Recompress with ZStd if available (keeps file size manageable)
+    if (zstdEnc) {
+      try { compData = await zstdEnc.compress(data, 3); } catch { compData = null; }
+    }
+    const chunkHdr = Buffer.alloc(16);
+    chunkHdr.write(name.padEnd(4, '\0').slice(0, 4), 0, 'ascii');
+    if (compData) {
+      chunkHdr.writeUInt32LE(compData.length, 4); // compSize
+      chunkHdr.writeUInt32LE(data.length,     8); // uncompSize
+      outParts.push(chunkHdr, compData);
+    } else {
+      chunkHdr.writeUInt32LE(0,           4); // compSize = 0 (uncompressed)
+      chunkHdr.writeUInt32LE(data.length, 8);
+      outParts.push(chunkHdr, data);
+    }
+  }
+  return Buffer.concat(outParts);
+}
 
 const PORT  = process.env.PORT || 5200;
 const CHUNK = 100;
@@ -1164,34 +1356,36 @@ http.createServer(async (req, res) => {
     }
 
     if (method === 'POST' && pathname === '/api/parse-rbxl') {
-      if (!rbxReader) { send(res, 500, { error: 'rbx-reader module not available' }); return; }
       const { fileBase64 } = await parseBody(req);
       if (!fileBase64) { send(res, 400, { error: 'fileBase64 required' }); return; }
-
       try {
-        const buf = Buffer.from(fileBase64, 'base64');
-        // Convert Node Buffer to a proper ArrayBuffer slice (Buffer.buffer may be shared/larger)
-        const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-        const parsed = rbxReader.parseBuffer(ab);
-
-        const SCRIPT_CLASSES = new Set(['Script', 'LocalScript', 'ModuleScript']);
-        const parts = [];
-
-        // result.instances is the flat list of all instances in the file
-        for (const inst of (parsed.instances || [])) {
-          if (!SCRIPT_CLASSES.has(inst.ClassName)) continue;
-          // getProperty returns the raw property value; try both casings
-          const src = inst.getProperty ? inst.getProperty('Source') : null;
-          if (src && typeof src === 'string' && src.trim().length > 0) {
-            parts.push(src);
-          }
-        }
-
-        console.log(`[parse-rbxl] parsed OK — ${(parsed.instances||[]).length} instances, ${parts.length} scripts`);
-        send(res, 200, { text: parts.join('\n\n'), scriptCount: parts.length });
+        const buf  = Buffer.from(fileBase64, 'base64');
+        const text = rbxlExtractText(buf);
+        // Count extracted numeric IDs as a rough script-count proxy
+        const idCount = (text.match(/\b\d{6,12}\b/g) || []).length;
+        console.log(`[parse-rbxl] extracted ${text.length} chars, ~${idCount} numeric IDs`);
+        send(res, 200, { text, scriptCount: idCount });
       } catch (e) {
         console.error('[parse-rbxl] error:', e.message);
         send(res, 500, { error: `Parse failed: ${e.message}` });
+      }
+      return;
+    }
+
+    if (method === 'POST' && pathname === '/api/modify-rbxl') {
+      const { fileBase64, idMap } = await parseBody(req);
+      if (!fileBase64 || !idMap || typeof idMap !== 'object') {
+        send(res, 400, { error: 'fileBase64 and idMap required' }); return;
+      }
+      try {
+        const buf      = Buffer.from(fileBase64, 'base64');
+        const modified = await rbxlModify(buf, idMap);
+        const replaced = Object.keys(idMap).length;
+        console.log(`[modify-rbxl] applied ${replaced} ID replacements, out size=${modified.length} bytes (${zstdEnc ? 'zstd' : 'uncompressed'})`);
+        send(res, 200, { fileBase64: modified.toString('base64'), replaced });
+      } catch (e) {
+        console.error('[modify-rbxl] error:', e.message);
+        send(res, 500, { error: `Modify failed: ${e.message}` });
       }
       return;
     }

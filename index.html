@@ -837,6 +837,7 @@ const S = {
   scanFileContent: null,
   scanFilename:    null,
   scanFileIsBinary: false,
+  scanFileBase64:  null,   // original binary for RBXL modify+download
 
 };
 
@@ -1144,6 +1145,7 @@ async function selectGame(game) {
   S.scanGame        = null;
   S.scanFileContent = null;
   S.scanFilename    = null;
+  S.scanFileBase64  = null;
   S.activeTab       = 'passes';
 
   const iconEl = $('sel-icon'), phEl = $('sel-icon-ph');
@@ -1446,47 +1448,58 @@ dropzone.addEventListener('drop', e => {
   if (f) processFile(f);
 });
 
+// Roblox binary file magic: first 8 bytes = '<roblox!'
+const RBXL_MAGIC = '<roblox!';
+function bufToBase64(arrayBuf) {
+  const bytes = new Uint8Array(arrayBuf);
+  let b = '';
+  for (let i = 0; i < bytes.length; i += 0x8000)
+    b += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(b);
+}
+
 function processFile(file) {
   if (!S.cookie) { toast('Connect your account first', 'err'); return; }
 
-  const ext = file.name.toLowerCase().split('.').pop();
-  if (ext === 'rbxl') {
-    // RBXL is binary — send to server for proper parsing with rbx-reader
-    const reader = new FileReader();
-    reader.onload = async e => {
-      try {
-        loading('Parsing RBXL…', 'Extracting scripts from binary place file');
-        // Encode ArrayBuffer as base64 in chunks to avoid stack overflow on large files
-        const bytes = new Uint8Array(e.target.result);
-        let binary = '';
-        const BCHUNK = 0x8000;
-        for (let i = 0; i < bytes.length; i += BCHUNK) {
-          binary += String.fromCharCode.apply(null, bytes.subarray(i, i + BCHUNK));
+  // Peek at the first 8 bytes to decide binary vs XML regardless of extension
+  const peekReader = new FileReader();
+  peekReader.onload = async e => {
+    const magic = new TextDecoder('ascii').decode(new Uint8Array(e.target.result));
+    if (magic.startsWith(RBXL_MAGIC)) {
+      // Binary RBXL — send to server for parsing
+      const fullReader = new FileReader();
+      fullReader.onload = async ev => {
+        try {
+          loading('Parsing RBXL…', 'Extracting scripts from binary place file');
+          const fileBase64 = bufToBase64(ev.target.result);
+          const result = await api('/api/parse-rbxl', { fileBase64 });
+          hideLoading();
+          if (!result.text || !result.text.trim()) {
+            toast('No script source found in RBXL file', 'err'); return;
+          }
+          toast(`Extracted ${result.scriptCount ?? '?'} numeric IDs from RBXL`);
+          S.scanFileIsBinary = true;
+          S.scanFileBase64   = fileBase64;  // keep for modify+download later
+          scanText(result.text, file.name).catch(err => toast(err.message, 'err'));
+        } catch (err) {
+          hideLoading();
+          toast(`Could not parse RBXL: ${err.message}`, 'err');
         }
-        const fileBase64 = btoa(binary);
-        const result = await api('/api/parse-rbxl', { fileBase64 });
-        hideLoading();
-        if (!result.text || !result.text.trim()) {
-          toast('No script source found in RBXL file', 'err'); return;
-        }
-        toast(`Extracted ${result.scriptCount ?? '?'} script(s) from RBXL`);
-        S.scanFileIsBinary = true;
-        scanText(result.text, file.name).catch(err => toast(err.message, 'err'));
-      } catch (err) {
-        hideLoading();
-        toast(`Could not parse RBXL: ${err.message}`, 'err');
-      }
-    };
-    reader.onerror = () => toast('Could not read file', 'err');
-    reader.readAsArrayBuffer(file);
-  } else {
-    // RBXMX, RBXLX, XML — plain text
-    S.scanFileIsBinary = false;
-    const reader = new FileReader();
-    reader.onload = e => scanText(e.target.result, file.name).catch(err => toast(err.message, 'err'));
-    reader.onerror = () => toast('Could not read file', 'err');
-    reader.readAsText(file, 'utf-8');
-  }
+      };
+      fullReader.onerror = () => toast('Could not read file', 'err');
+      fullReader.readAsArrayBuffer(file);
+    } else {
+      // RBXMX, RBXLX, XML — plain text
+      S.scanFileIsBinary = false;
+      S.scanFileBase64   = null;
+      const txtReader = new FileReader();
+      txtReader.onload = ev => scanText(ev.target.result, file.name).catch(err => toast(err.message, 'err'));
+      txtReader.onerror = () => toast('Could not read file', 'err');
+      txtReader.readAsText(file, 'utf-8');
+    }
+  };
+  peekReader.onerror = () => toast('Could not read file', 'err');
+  peekReader.readAsArrayBuffer(file.slice(0, 8));
 }
 
 async function scanText(text, filename) {
@@ -1637,6 +1650,7 @@ function renderScanResults(products, filename = '') {
     S.scanFileContent  = null;
     S.scanFilename     = null;
     S.scanFileIsBinary = false;
+    S.scanFileBase64   = null;
     el.innerHTML = '';
   });
 
@@ -1708,13 +1722,35 @@ async function uploadScanResults() {
         : '';
 
       // Build modified file with old IDs swapped for new IDs and offer download
-      // (only for text-based files — RBXL binary rewrite is not supported)
       let downloadLine = '';
-      if (ok > 0 && S.scanFileContent && !S.scanFileIsBinary) {
-        const idMap = {};
-        (result.success || []).forEach(item => {
-          if (item.originalId && item.newId) idMap[item.originalId] = item.newId;
-        });
+      const idMap = {};
+      (result.success || []).forEach(item => {
+        if (item.originalId && item.newId) idMap[item.originalId] = item.newId;
+      });
+
+      if (ok > 0 && S.scanFileIsBinary && S.scanFileBase64 && Object.keys(idMap).length) {
+        // Binary RBXL — send to server to rewrite string lengths correctly
+        try {
+          const modResult = await api('/api/modify-rbxl', { fileBase64: S.scanFileBase64, idMap });
+          if (modResult.fileBase64) {
+            // Decode base64 back to binary blob
+            const binStr = atob(modResult.fileBase64);
+            const binArr = new Uint8Array(binStr.length);
+            for (let i = 0; i < binStr.length; i++) binArr[i] = binStr.charCodeAt(i);
+            const outName = (S.scanFilename || 'modified.rbxl').replace(/(\.rbxl[x]?)$/i, '_reuploaded.rbxl');
+            const blob = new Blob([binArr], { type: 'application/octet-stream' });
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href = url; a.download = outName;
+            document.body.appendChild(a); a.click();
+            setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1500);
+            downloadLine = `<div style="margin-top:6px;font-size:0.8rem;color:var(--green)"><i class="fa-solid fa-download"></i> Downloaded <strong>${esc(outName)}</strong> with ${modResult.replaced ?? Object.keys(idMap).length} ID${(modResult.replaced ?? 1) !== 1 ? 's' : ''} updated</div>`;
+            toast(`RBXL downloaded: ${outName}`, 'ok');
+          }
+        } catch (modErr) { console.warn('RBXL modify failed:', modErr.message); }
+
+      } else if (ok > 0 && S.scanFileContent && !S.scanFileIsBinary) {
+        // XML/text file — do in-browser text replacement
         if (Object.keys(idMap).length) {
           let modified = S.scanFileContent;
           let replaced = 0;
@@ -1854,7 +1890,7 @@ $('upload-btn').addEventListener('click', async () => {
 $('back-btn').addEventListener('click', () => {
   S.game = null; S.products = null;
   S.origPrices = {}; S.newPrices = {}; S.scanMatches = [];
-  S.scanFileContent = null; S.scanFilename = null;
+  S.scanFileContent = null; S.scanFilename = null; S.scanFileBase64 = null;
   showStep('picker');
 });
 

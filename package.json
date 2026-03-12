@@ -20,6 +20,8 @@
   },
   "homepage": "https://github.com/omonkeyz/RoModded#readme",
   "dependencies": {
+    "@mongodb-js/zstd": "^7.0.0",
+    "fzstd": "^0.1.1",
     "rbx-reader": "^1.5.10"
   }
 }
